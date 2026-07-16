@@ -6,12 +6,6 @@
     <title>Better Life AI</title>
     <link rel="stylesheet" href="style.css">
     
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-        window.firebaseDocs = { initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged };
-    </script>
-    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -43,6 +37,7 @@
         <div class="sidebar">
             <div class="sidebar-header">
                 <h2>Мои ИИ</h2>
+                <button id="btn-logout" style="background:#ff4d4d; padding: 5px 10px;">Выйти</button>
                 <button id="btn-new-ai">+</button>
             </div>
             <ul id="ai-list">
@@ -59,6 +54,6 @@
         </div>
     </div>
 
-    <script type="module" src="app.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>

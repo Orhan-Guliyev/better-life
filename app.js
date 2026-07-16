@@ -1,57 +1,63 @@
-// === КОНФИГУРАЦИЯ ===
-const firebaseConfig = {
-    apiKey: "AIzaSyBhGHPzLQQc0Ww8Cqfuvhl__sEA5zzYOfY",
-    authDomain: "better-life-5eb0a.firebaseapp.com",
-    projectId: "better-life-5eb0a",
-};
+// === КОНФИГУРАЦИЯ SUPABASE ===
+const SUPABASE_URL = 'https://lcxbcxagitcilklmniwe.supabase.co'; // Твой URL из логов
+const SUPABASE_ANON_KEY = 'ТВОЙ_SUPABASE_ANON_KEY'; // Сюда вставь свой anon key
 
-const SUPABASE_URL = 'https://lcxbcxagitcilklmniwe.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_secret_OKHVhL5J3aYPeGtjzABiUw_FC8op5yF';
-
-// === ИНИЦИАЛИЗАЦИЯ ===
-const { initializeApp, getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged } = window.firebaseDocs;
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+// Инициализация клиента
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let userApiKeys = [];
 let currentPersona = null;
 
-// Иерархия моделей для даунгрейда (от лучшей к базовой)
 const GEMINI_MODELS = [
     'gemini-1.5-pro-latest',
     'gemini-1.5-flash-latest',
     'gemini-1.0-pro'
 ];
 
-// === АВТОРИЗАЦИЯ ===
-onAuthStateChanged(auth, async (user) => {
-    if (user) {
-        currentUser = user;
+// === СЛУШАТЕЛЬ СЕССИИ (Supabase Auth) ===
+supabase.auth.onAuthStateChange(async (event, session) => {
+    if (session) {
+        currentUser = session.user;
         document.getElementById('auth-screen').classList.add('hidden');
         await checkApiKeys();
     } else {
+        currentUser = null;
         document.getElementById('auth-screen').classList.remove('hidden');
         document.getElementById('app-screen').classList.add('hidden');
     }
 });
 
-document.getElementById('btn-login').addEventListener('click', () => {
-    signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('password').value)
-        .catch(err => alert("Ошибка входа: " + err.message));
+// Вход
+document.getElementById('btn-login').addEventListener('click', async () => {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) alert("Ошибка входа: " + error.message);
 });
 
-document.getElementById('btn-register').addEventListener('click', () => {
-    createUserWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('password').value)
-        .catch(err => alert("Ошибка регистрации: " + err.message));
+// Регистрация
+document.getElementById('btn-register').addEventListener('click', async () => {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) alert("Ошибка регистрации: " + error.message);
+    else alert("Регистрация успешна! Проверьте почту для подтверждения (если включено в Supabase) или попробуйте войти.");
+});
+
+// Выход
+document.getElementById('btn-logout').addEventListener('click', async () => {
+    await supabase.auth.signOut();
 });
 
 // === ЛОГИКА API КЛЮЧЕЙ ===
 async function checkApiKeys() {
-    const { data, error } = await supabase.from('api_keys').select('key_value').eq('user_id', currentUser.uid);
+    // Больше не нужно вручную фильтровать по .eq('user_id'), RLS политика сама отдаст ключи текущего юзера
+    const { data, error } = await supabase.from('api_keys').select('key_value');
+    
     if (data && data.length > 0) {
         userApiKeys = data.map(k => k.key_value);
+        document.getElementById('api-key-modal').classList.add('hidden');
         startApp();
     } else {
         document.getElementById('api-key-modal').classList.remove('hidden');
@@ -59,40 +65,46 @@ async function checkApiKeys() {
 }
 
 document.getElementById('btn-add-key').addEventListener('click', async () => {
-    const key = document.getElementById('api-key-input').value;
+    const key = document.getElementById('api-key-input').value.trim();
     if (!key) return;
     
-    await supabase.from('api_keys').insert([{ user_id: currentUser.uid, key_value: key }]);
-    document.getElementById('keys-list').innerHTML += `<li>Ключ добавлен!</li>`;
-    document.getElementById('api-key-input').value = '';
-    document.getElementById('btn-finish-keys').classList.remove('hidden');
+    if (userApiKeys.length >= 5) {
+        alert("Максимум можно добавить 5 ключей!");
+        return;
+    }
+    
+    // Поле user_id заполнится автоматически благодаря связке с auth.users, 
+    // но для надежности укажем его через currentUser.id
+    const { error } = await supabase.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]);
+    
+    if (error) {
+        alert("Ошибка добавления: " + error.message);
+    } else {
+        userApiKeys.push(key);
+        document.getElementById('keys-list').innerHTML += `<li>Ключ добален (всего: ${userApiKeys.length})</li>`;
+        document.getElementById('api-key-input').value = '';
+        document.getElementById('btn-finish-keys').classList.remove('hidden');
+    }
 });
 
 document.getElementById('btn-finish-keys').addEventListener('click', () => {
     document.getElementById('api-key-modal').classList.add('hidden');
-    checkApiKeys();
+    startApp();
 });
 
-// === ЗАПУСК ПРИЛОЖЕНИЯ И ЗАГРУЗКА ИИ ===
+// === ЗАПУСК ПРИЛОЖЕНИЯ ===
 async function startApp() {
     document.getElementById('app-screen').classList.remove('hidden');
-    // Здесь должна быть загрузка списка ИИ из таблицы ai_personas (опущено для краткости)
-    // Для теста создадим фейкового ИИ:
+    // Дефолтный заглушечный персонаж для проверки
     currentPersona = { id: 'test', name: 'Психолог', system_prompt: 'Ты опытный психолог.' };
     document.getElementById('chat-input-area').classList.remove('hidden');
     document.getElementById('chat-header').innerText = `Чат: ${currentPersona.name}`;
 }
 
-// === УМНАЯ СИСТЕМА ОТПРАВКИ И РОУТИНГ КЛЮЧЕЙ ===
+// === РОУТИНГ КЛЮЧЕЙ GEMINI ===
 async function sendGeminiRequest(promptText) {
-    // Проходимся по моделям (от лучшей к худшей)
     for (let model of GEMINI_MODELS) {
-        console.log(`Пробуем модель: ${model}`);
-        
-        // Проходимся по всем доступным ключам пользователя
         for (let apiKey of userApiKeys) {
-            console.log(`Пробуем ключ: ${apiKey.substring(0, 8)}...`);
-            
             try {
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
                 const response = await fetch(url, {
@@ -107,52 +119,40 @@ async function sendGeminiRequest(promptText) {
                 const data = await response.json();
 
                 if (!response.ok) {
-                    // Ошибка 429 - Too Many Requests (Закончились лимиты/токены)
                     if (response.status === 429 || data.error?.code === 429) {
-                        console.warn('Лимит исчерпан. Переход к следующему ключу/модели.');
-                        continue; // Переходим к следующему ключу в цикле
+                        console.warn(`Модель ${model} или ключ исчерпали лимит. Переключаемся...`);
+                        continue; 
                     }
-                    throw new Error(data.error?.message || 'Неизвестная ошибка API');
+                    throw new Error(data.error?.message || 'Ошибка API');
                 }
 
-                // Успех! Возвращаем текст
                 return data.candidates[0].content.parts[0].text;
 
             } catch (error) {
-                console.error("Ошибка при запросе:", error);
-                // Если ошибка сети или другая критическая, продолжаем попытки с другими ключами
+                console.error("Попытка неудачна:", error);
             }
         }
     }
-    
-    // Если все циклы завершились и мы здесь — значит ничего не сработало
-    throw new Error("Все API ключи и модели исчерпаны. Попробуйте позже.");
+    throw new Error("Все ваши API ключи или лимиты моделей Gemini полностью исчерпаны.");
 }
 
-// === ОБРАБОТКА ЧАТА ===
+// === ОТПРАВКА СООБЩЕНИЙ ===
 document.getElementById('btn-send').addEventListener('click', async () => {
     const input = document.getElementById('message-input');
     const text = input.value.trim();
     if (!text) return;
 
     const chatBox = document.getElementById('chat-messages');
-    
-    // Показываем сообщение пользователя
     chatBox.innerHTML += `<div class="msg user">${text}</div>`;
     input.value = '';
+    chatBox.scrollTop = chatBox.scrollHeight;
 
     try {
-        // Запускаем наш каскадный алгоритм
         const reply = await sendGeminiRequest(text);
-        
-        // Показываем ответ ИИ
         chatBox.innerHTML += `<div class="msg model">${reply}</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
-        
-        // (Опционально) Сохраняем в Supabase в таблицу messages
     } catch (error) {
         alert(error.message);
-        // Отмена сообщения: удаляем последнее отправленное (или помечаем как ошибку)
-        chatBox.lastElementChild.remove(); 
+        chatBox.lastElementChild.remove(); // Отмена отправки сообщения при полной ошибке
     }
 });
