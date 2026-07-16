@@ -5,10 +5,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let userApiKeys = [];
+let userApiKeys = []; // Теперь храним объекты { id, key_value }
 let currentPersona = null;
 
-// Оставляем только модели 1.5, так как 1.0 не поддерживает system_instruction
 const GEMINI_MODELS = [
     'gemini-1.5-pro',
     'gemini-1.5-flash'
@@ -49,35 +48,32 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
 
 // === ЛОГИКА API КЛЮЧЕЙ ===
 async function checkApiKeys() {
-    const { data, error } = await supabaseClient.from('api_keys').select('key_value');
+    const { data, error } = await supabaseClient.from('api_keys').select('id, key_value');
     
     if (data && data.length > 0) {
-        userApiKeys = data.map(k => k.key_value);
+        userApiKeys = data; // Сохраняем массив объектов
         document.getElementById('api-key-modal').classList.add('hidden');
         startApp();
     } else {
+        userApiKeys = [];
         document.getElementById('api-key-modal').classList.remove('hidden');
     }
 }
 
+// Добавление первого ключа при регистрации
 document.getElementById('btn-add-key').addEventListener('click', async () => {
     const key = document.getElementById('api-key-input').value.trim();
-    if (!key.startsWith('AIzaSy')) {
-        alert("Неверный формат ключа! Ключ Gemini должен начинаться с AIzaSy...");
+    if (!key) {
+        alert("Введите ключ!");
         return;
     }
     
-    if (userApiKeys.length >= 5) {
-        alert("Максимум 5 ключей!");
-        return;
-    }
-    
-    const { error } = await supabaseClient.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]);
+    const { data, error } = await supabaseClient.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]).select();
     
     if (error) alert("Ошибка добавления: " + error.message);
     else {
-        userApiKeys.push(key);
-        document.getElementById('keys-list').innerHTML += `<li>Ключ добавлен (всего: ${userApiKeys.length})</li>`;
+        userApiKeys.push(data[0]);
+        document.getElementById('keys-list').innerHTML += `<li>Ключ сохранен!</li>`;
         document.getElementById('api-key-input').value = '';
         document.getElementById('btn-finish-keys').classList.remove('hidden');
     }
@@ -88,10 +84,64 @@ document.getElementById('btn-finish-keys').addEventListener('click', () => {
     startApp();
 });
 
+// === УПРАВЛЕНИЕ НАСТРОЙКАМИ (МОДАЛКА КЛЮЧЕЙ) ===
+document.getElementById('btn-settings').addEventListener('click', () => {
+    renderSettingsKeys();
+    document.getElementById('settings-modal').classList.remove('hidden');
+});
+
+document.getElementById('btn-close-settings').addEventListener('click', () => {
+    document.getElementById('settings-modal').classList.add('hidden');
+});
+
+function renderSettingsKeys() {
+    const container = document.getElementById('settings-keys-list');
+    container.innerHTML = '';
+    
+    userApiKeys.forEach(k => {
+        const row = document.createElement('div');
+        row.className = 'key-row';
+        row.innerHTML = `
+            <span class="key-text" title="${k.key_value}">${k.key_value}</span>
+            <button onclick="deleteApiKey('${k.id}')">Удалить</button>
+        `;
+        container.appendChild(row);
+    });
+}
+
+// Удаление ключа из настроек
+window.deleteApiKey = async function(id) {
+    if (userApiKeys.length <= 1) {
+        alert("Нельзя удалить единственный ключ! Сначала добавьте новый.");
+        return;
+    }
+    const { error } = await supabaseClient.from('api_keys').delete().eq('id', id);
+    if (error) alert(error.message);
+    else {
+        userApiKeys = userApiKeys.filter(k => k.id !== id);
+        renderSettingsKeys();
+    }
+};
+
+// Добавление нового ключа через настройки
+document.getElementById('btn-add-setting-key').addEventListener('click', async () => {
+    const input = document.getElementById('new-setting-key');
+    const key = input.value.trim();
+    if (!key) return;
+    
+    const { data, error } = await supabaseClient.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]).select();
+    if (error) alert(error.message);
+    else {
+        userApiKeys.push(data[0]);
+        input.value = '';
+        renderSettingsKeys();
+    }
+});
+
 // === ЗАПУСК ПРИЛОЖЕНИЯ И ЗАГРУЗКА ИИ ===
 async function startApp() {
     document.getElementById('app-screen').classList.remove('hidden');
-    document.getElementById('chat-input-area').classList.add('hidden'); // Скрываем поле ввода
+    document.getElementById('chat-input-area').classList.add('hidden'); 
     document.getElementById('chat-header').innerText = `Выберите ИИ для начала общения`;
     document.getElementById('chat-messages').innerHTML = '';
     currentPersona = null;
@@ -108,8 +158,30 @@ async function loadPersonas() {
         data.forEach(persona => {
             const li = document.createElement('li');
             li.className = 'ai-item';
-            li.innerText = persona.name;
+            
+            // Клик по самому элементу открывает чат
             li.onclick = () => selectPersona(persona);
+            
+            li.innerHTML = `
+                <span class="ai-name">${persona.name}</span>
+                <div class="ai-actions">
+                    <button class="btn-edit">✏️</button>
+                    <button class="btn-del">🗑️</button>
+                </div>
+            `;
+            
+            // Обработчик редактирования
+            li.querySelector('.btn-edit').addEventListener('click', (e) => {
+                e.stopPropagation(); // Чтобы чат не открывался параллельно
+                openEditModal(persona);
+            });
+            
+            // Обработчик удаления
+            li.querySelector('.btn-del').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deletePersona(persona.id);
+            });
+            
             list.appendChild(li);
         });
     }
@@ -122,16 +194,29 @@ function selectPersona(persona) {
     document.getElementById('chat-input-area').classList.remove('hidden');
 }
 
-// === СОЗДАНИЕ НОВОГО ИИ ===
+// === СОЗДАНИЕ И РЕДАКТИРОВАНИЕ ИИ ===
 document.getElementById('btn-new-ai').addEventListener('click', () => {
+    document.getElementById('ai-modal-title').innerText = "Создать нового ИИ";
+    document.getElementById('edit-ai-id').value = "";
+    document.getElementById('ai-name').value = "";
+    document.getElementById('ai-prompt').value = "";
     document.getElementById('new-ai-modal').classList.remove('hidden');
 });
+
+function openEditModal(persona) {
+    document.getElementById('ai-modal-title').innerText = "Редактировать ИИ";
+    document.getElementById('edit-ai-id').value = persona.id;
+    document.getElementById('ai-name').value = persona.name;
+    document.getElementById('ai-prompt').value = persona.system_prompt;
+    document.getElementById('new-ai-modal').classList.remove('hidden');
+}
 
 document.getElementById('btn-close-ai').addEventListener('click', () => {
     document.getElementById('new-ai-modal').classList.add('hidden');
 });
 
 document.getElementById('btn-save-ai').addEventListener('click', async () => {
+    const id = document.getElementById('edit-ai-id').value;
     const name = document.getElementById('ai-name').value.trim();
     const prompt = document.getElementById('ai-prompt').value.trim();
     
@@ -140,27 +225,54 @@ document.getElementById('btn-save-ai').addEventListener('click', async () => {
         return;
     }
     
-    const { error } = await supabaseClient.from('ai_personas').insert([{
-        user_id: currentUser.id,
-        name: name,
-        system_prompt: prompt
-    }]);
+    if (id) {
+        // Редактирование существующего ИИ
+        const { error } = await supabaseClient.from('ai_personas').update({ name, system_prompt: prompt }).eq('id', id);
+        if (error) alert(error.message);
+        else {
+            if (currentPersona && currentPersona.id === id) {
+                currentPersona.name = name;
+                currentPersona.system_prompt = prompt;
+                document.getElementById('chat-header').innerText = `Чат: ${name}`;
+            }
+        }
+    } else {
+        // Создание нового ИИ
+        const { error } = await supabaseClient.from('ai_personas').insert([{
+            user_id: currentUser.id,
+            name: name,
+            system_prompt: prompt
+        }]);
+        if (error) alert(error.message);
+    }
     
+    document.getElementById('new-ai-modal').classList.add('hidden');
+    await loadPersonas();
+});
+
+// Удаление ИИ
+async function deletePersona(id) {
+    if (!confirm("Вы уверены, что хотите удалить этого ИИ?")) return;
+    
+    const { error } = await supabaseClient.from('ai_personas').delete().eq('id', id);
     if (error) alert(error.message);
     else {
-        document.getElementById('new-ai-modal').classList.add('hidden');
-        document.getElementById('ai-name').value = '';
-        document.getElementById('ai-prompt').value = '';
-        await loadPersonas();
+        if (currentPersona && currentPersona.id === id) {
+            startApp(); // Сбрасываем чат, если удалили активного ИИ
+        } else {
+            await loadPersonas();
+        }
     }
-});
+}
 
 // === РОУТИНГ КЛЮЧЕЙ GEMINI ===
 async function sendGeminiRequest(promptText) {
     for (let model of GEMINI_MODELS) {
-        for (let apiKey of userApiKeys) {
+        for (let keyObj of userApiKeys) {
             try {
+                const apiKey = keyObj.key_value;
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

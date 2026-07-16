@@ -23,18 +23,32 @@
 
     <div id="api-key-modal" class="modal hidden">
         <div class="modal-content">
-            <h2>Добавьте API ключи Gemini</h2>
-            <p>Для работы нужен хотя бы один ключ (начинается с AIzaSy...).</p>
-            <input type="text" id="api-key-input" placeholder="AIzaSy...">
+            <h2>Добро пожаловать!</h2>
+            <p>Для работы нужен хотя бы один API ключ Gemini из AI Studio.</p>
+            <input type="text" id="api-key-input" placeholder="Вставьте ваш ключ...">
             <button id="btn-add-key">Сохранить ключ</button>
             <ul id="keys-list"></ul>
             <button id="btn-finish-keys" class="hidden">Продолжить</button>
         </div>
     </div>
 
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Настройки (API Ключи)</h2>
+            <div id="settings-keys-list">
+                </div>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <input type="text" id="new-setting-key" placeholder="Новый ключ Gemini..." style="flex-grow: 1;">
+                <button id="btn-add-setting-key">Добавить</button>
+            </div>
+            <button id="btn-close-settings" style="background: #ccc; color: black; margin-top: 15px;">Закрыть</button>
+        </div>
+    </div>
+
     <div id="new-ai-modal" class="modal hidden">
         <div class="modal-content">
-            <h2>Создать нового ИИ</h2>
+            <h2 id="ai-modal-title">Создать ИИ</h2>
+            <input type="hidden" id="edit-ai-id">
             <input type="text" id="ai-name" placeholder="Имя (например: Диетолог)">
             <textarea id="ai-prompt" placeholder="Промпт: Ты опытный диетолог..." style="height: 100px; padding: 10px; border-radius: 5px; border: 1px solid #ccc;"></textarea>
             <button id="btn-save-ai">Сохранить</button>
@@ -46,8 +60,11 @@
         <div class="sidebar">
             <div class="sidebar-header">
                 <h2>Мои ИИ</h2>
-                <button id="btn-logout" style="background:#ff4d4d; padding: 5px 10px;">Выйти</button>
-                <button id="btn-new-ai">+</button>
+                <div style="display: flex; gap: 8px;">
+                    <button id="btn-settings" title="Настройки" style="background: #e4e6eb; color: black; padding: 5px 10px;">⚙️</button>
+                    <button id="btn-new-ai" title="Создать ИИ" style="padding: 5px 12px;">+</button>
+                    <button id="btn-logout" title="Выйти" style="background:#ff4d4d; padding: 5px 10px;">🚪</button>
+                </div>
             </div>
             <ul id="ai-list"></ul>
         </div>
