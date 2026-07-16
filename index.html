@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Better Life AI</title>
     <link rel="stylesheet" href="style.css">
-    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -25,11 +24,21 @@
     <div id="api-key-modal" class="modal hidden">
         <div class="modal-content">
             <h2>Добавьте API ключи Gemini</h2>
-            <p>Для работы нужен хотя бы один ключ (максимум 5).</p>
+            <p>Для работы нужен хотя бы один ключ (начинается с AIzaSy...).</p>
             <input type="text" id="api-key-input" placeholder="AIzaSy...">
             <button id="btn-add-key">Сохранить ключ</button>
             <ul id="keys-list"></ul>
             <button id="btn-finish-keys" class="hidden">Продолжить</button>
+        </div>
+    </div>
+
+    <div id="new-ai-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Создать нового ИИ</h2>
+            <input type="text" id="ai-name" placeholder="Имя (например: Диетолог)">
+            <textarea id="ai-prompt" placeholder="Промпт: Ты опытный диетолог..." style="height: 100px; padding: 10px; border-radius: 5px; border: 1px solid #ccc;"></textarea>
+            <button id="btn-save-ai">Сохранить</button>
+            <button id="btn-close-ai" style="background: #ccc; color: black;">Отмена</button>
         </div>
     </div>
 
@@ -40,8 +49,7 @@
                 <button id="btn-logout" style="background:#ff4d4d; padding: 5px 10px;">Выйти</button>
                 <button id="btn-new-ai">+</button>
             </div>
-            <ul id="ai-list">
-                </ul>
+            <ul id="ai-list"></ul>
         </div>
         
         <div class="chat-area">

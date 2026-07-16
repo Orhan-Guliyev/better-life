@@ -1,21 +1,20 @@
 // === КОНФИГУРАЦИЯ SUPABASE ===
 const SUPABASE_URL = 'https://lcxbcxagitcilklmniwe.supabase.co'; 
-const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL'; // Вставь сюда именно ANON ключ!
+const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
 
-// Инициализация клиента (без конфликта имён)
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let userApiKeys = [];
 let currentPersona = null;
 
+// Оставляем только модели 1.5, так как 1.0 не поддерживает system_instruction
 const GEMINI_MODELS = [
-    'gemini-1.5-pro-latest',
-    'gemini-1.5-flash-latest',
-    'gemini-1.0-pro'
+    'gemini-1.5-pro',
+    'gemini-1.5-flash'
 ];
 
-// === СЛУШАТЕЛЬ СЕССИИ (Supabase Auth) ===
+// === СЛУШАТЕЛЬ СЕССИИ ===
 supabaseClient.auth.onAuthStateChange(async (event, session) => {
     if (session) {
         currentUser = session.user;
@@ -28,7 +27,7 @@ supabaseClient.auth.onAuthStateChange(async (event, session) => {
     }
 });
 
-// Вход
+// Авторизация
 document.getElementById('btn-login').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
@@ -36,16 +35,14 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     if (error) alert("Ошибка входа: " + error.message);
 });
 
-// Регистрация
 document.getElementById('btn-register').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const { error } = await supabaseClient.auth.signUp({ email, password });
     if (error) alert("Ошибка регистрации: " + error.message);
-    else alert("Регистрация успешна! Если вы отключили 'Confirm email' в Supabase, то можете сразу нажать 'Войти'.");
+    else alert("Регистрация успешна!");
 });
 
-// Выход
 document.getElementById('btn-logout').addEventListener('click', async () => {
     await supabaseClient.auth.signOut();
 });
@@ -57,7 +54,7 @@ async function checkApiKeys() {
     if (data && data.length > 0) {
         userApiKeys = data.map(k => k.key_value);
         document.getElementById('api-key-modal').classList.add('hidden');
-        startApp(); // Теперь функция точно определена ниже!
+        startApp();
     } else {
         document.getElementById('api-key-modal').classList.remove('hidden');
     }
@@ -65,18 +62,20 @@ async function checkApiKeys() {
 
 document.getElementById('btn-add-key').addEventListener('click', async () => {
     const key = document.getElementById('api-key-input').value.trim();
-    if (!key) return;
+    if (!key.startsWith('AIzaSy')) {
+        alert("Неверный формат ключа! Ключ Gemini должен начинаться с AIzaSy...");
+        return;
+    }
     
     if (userApiKeys.length >= 5) {
-        alert("Максимум можно добавить 5 ключей!");
+        alert("Максимум 5 ключей!");
         return;
     }
     
     const { error } = await supabaseClient.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]);
     
-    if (error) {
-        alert("Ошибка добавления: " + error.message);
-    } else {
+    if (error) alert("Ошибка добавления: " + error.message);
+    else {
         userApiKeys.push(key);
         document.getElementById('keys-list').innerHTML += `<li>Ключ добавлен (всего: ${userApiKeys.length})</li>`;
         document.getElementById('api-key-input').value = '';
@@ -89,14 +88,72 @@ document.getElementById('btn-finish-keys').addEventListener('click', () => {
     startApp();
 });
 
-// === ЗАПУСК ПРИЛОЖЕНИЯ ===
+// === ЗАПУСК ПРИЛОЖЕНИЯ И ЗАГРУЗКА ИИ ===
 async function startApp() {
     document.getElementById('app-screen').classList.remove('hidden');
-    // Дефолтный заглушечный персонаж для проверки работоспособности чата
-    currentPersona = { id: 'test', name: 'Психолог', system_prompt: 'Ты опытный психолог.' };
-    document.getElementById('chat-input-area').classList.remove('hidden');
-    document.getElementById('chat-header').innerText = `Чат: ${currentPersona.name}`;
+    document.getElementById('chat-input-area').classList.add('hidden'); // Скрываем поле ввода
+    document.getElementById('chat-header').innerText = `Выберите ИИ для начала общения`;
+    document.getElementById('chat-messages').innerHTML = '';
+    currentPersona = null;
+    
+    await loadPersonas();
 }
+
+async function loadPersonas() {
+    const { data, error } = await supabaseClient.from('ai_personas').select('*');
+    const list = document.getElementById('ai-list');
+    list.innerHTML = '';
+    
+    if (data) {
+        data.forEach(persona => {
+            const li = document.createElement('li');
+            li.className = 'ai-item';
+            li.innerText = persona.name;
+            li.onclick = () => selectPersona(persona);
+            list.appendChild(li);
+        });
+    }
+}
+
+function selectPersona(persona) {
+    currentPersona = persona;
+    document.getElementById('chat-header').innerText = `Чат: ${persona.name}`;
+    document.getElementById('chat-messages').innerHTML = ''; 
+    document.getElementById('chat-input-area').classList.remove('hidden');
+}
+
+// === СОЗДАНИЕ НОВОГО ИИ ===
+document.getElementById('btn-new-ai').addEventListener('click', () => {
+    document.getElementById('new-ai-modal').classList.remove('hidden');
+});
+
+document.getElementById('btn-close-ai').addEventListener('click', () => {
+    document.getElementById('new-ai-modal').classList.add('hidden');
+});
+
+document.getElementById('btn-save-ai').addEventListener('click', async () => {
+    const name = document.getElementById('ai-name').value.trim();
+    const prompt = document.getElementById('ai-prompt').value.trim();
+    
+    if (!name || !prompt) {
+        alert("Заполните имя и промпт!");
+        return;
+    }
+    
+    const { error } = await supabaseClient.from('ai_personas').insert([{
+        user_id: currentUser.id,
+        name: name,
+        system_prompt: prompt
+    }]);
+    
+    if (error) alert(error.message);
+    else {
+        document.getElementById('new-ai-modal').classList.add('hidden');
+        document.getElementById('ai-name').value = '';
+        document.getElementById('ai-prompt').value = '';
+        await loadPersonas();
+    }
+});
 
 // === РОУТИНГ КЛЮЧЕЙ GEMINI ===
 async function sendGeminiRequest(promptText) {
@@ -137,7 +194,7 @@ async function sendGeminiRequest(promptText) {
 document.getElementById('btn-send').addEventListener('click', async () => {
     const input = document.getElementById('message-input');
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || !currentPersona) return;
 
     const chatBox = document.getElementById('chat-messages');
     chatBox.innerHTML += `<div class="msg user">${text}</div>`;
@@ -151,7 +208,7 @@ document.getElementById('btn-send').addEventListener('click', async () => {
     } catch (error) {
         alert(error.message);
         if (chatBox.lastElementChild) {
-            chatBox.lastElementChild.remove(); // Удаляем сообщение пользователя, если ИИ не смог ответить
+            chatBox.lastElementChild.remove(); 
         }
     }
 });
