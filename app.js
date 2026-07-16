@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Открытие окна выбора файлов
     document.getElementById('btn-attach').addEventListener('click', () => {
+        e.preventDefault();
         document.getElementById('file-input').click();
     });
 
