@@ -8,9 +8,12 @@ let currentUser = null;
 let userApiKeys = []; // Теперь храним объекты { id, key_value }
 let currentPersona = null;
 
+// Перечень актуальных бесплатных моделей Gemini в порядке убывания возможностей (Downgrade)
 const GEMINI_MODELS = [
-    'gemini-1.5-pro',
-    'gemini-1.5-flash'
+    'gemini-3.5-flash',        // 1. Основная флагманская бесплатная модель с максимальным интеллектом
+    'gemini-3-flash-preview',  // 2. Высокопроизводительный резерв уровня Gemini 3
+    'gemini-3.1-flash-lite',   // 3. Быстрая облегченная модель для разгрузки простых запросов
+    'gemini-2.5-flash'         // 4. Финальный фолбек предыдущего поколения
 ];
 
 // === СЛУШАТЕЛЬ СЕССИИ ===
