@@ -70,7 +70,10 @@
         </div>
         
         <div class="chat-area">
-            <div id="chat-header">Выберите ИИ для начала общения</div>
+            <div id="chat-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <span id="chat-header-text">Выберите ИИ для начала общения</span>
+                <button id="btn-clear-chat" class="hidden" style="background: #ffeaeb; color: #ff4d4d; border: 1px solid #ffccd0; padding: 5px 12px; font-size: 13px; border-radius: 5px;">Очистить чат</button>
+            </div>
             <div id="chat-messages"></div>
             <div class="chat-input-area hidden" id="chat-input-area">
                 <input type="text" id="message-input" placeholder="Напишите сообщение...">

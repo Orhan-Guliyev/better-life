@@ -43,3 +43,18 @@ button:hover { background: #006bce; }
 .msg { max-width: 70%; padding: 10px 15px; border-radius: 15px; }
 .msg.user { background: #0084ff; color: white; align-self: flex-end; }
 .msg.model { background: #f0f2f5; color: black; align-self: flex-start; }
+
+/* Индикатор статуса печати модели */
+.msg.typing {
+    background: #fafafa;
+    color: #888;
+    font-style: italic;
+    border: 1px dashed #ddd;
+    align-self: flex-start;
+    animation: pulse 1.5s infinite ease-in-out;
+}
+@keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+}
