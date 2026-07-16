@@ -32,7 +32,7 @@ const MEMORY_MODELS = [
 document.addEventListener('DOMContentLoaded', () => {
 
     // Открытие окна выбора файлов
-    document.getElementById('btn-attach').addEventListener('click', () => {
+    document.getElementById('btn-attach').addEventListener('click', (e) => { // Добавили 'e' здесь
         e.preventDefault();
         document.getElementById('file-input').click();
     });
