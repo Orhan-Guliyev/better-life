@@ -23,24 +23,45 @@
 
     <div id="api-key-modal" class="modal hidden">
         <div class="modal-content">
-            <h2>Добро пожаловать!</h2>
-            <p>Для работы нужен хотя бы один API ключ Gemini из AI Studio.</p>
-            <input type="text" id="api-key-input" placeholder="Вставьте ваш ключ...">
-            <button id="btn-add-key">Сохранить ключ</button>
-            <ul id="keys-list"></ul>
-            <button id="btn-finish-keys" class="hidden">Продолжить</button>
+            <h2>Настройка ключей</h2>
+            <p style="font-size: 14px; color: #555;">Для работы приложения требуются ключи Gemini из AI Studio. Они хранятся безопасно и используются только вами.</p>
+            
+            <div id="setup-regular-container" style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="font-size: 13px; font-weight: bold;">Обычный API ключ (для чата):</label>
+                <input type="text" id="setup-regular-key" placeholder="AIzaSy...">
+            </div>
+
+            <div id="setup-master-container" style="display: flex; flex-direction: column; gap: 5px;">
+                <label style="font-size: 13px; font-weight: bold;">Мастер-ключ (для памяти ИИ):</label>
+                <input type="text" id="setup-master-key" placeholder="AIzaSy...">
+            </div>
+
+            <button id="btn-save-setup-keys" style="margin-top: 10px;">Сохранить и начать</button>
         </div>
     </div>
 
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content">
-            <h2>Настройки (API Ключи)</h2>
-            <div id="settings-keys-list">
+            <h2>Настройки API Ключей</h2>
+            
+            <div class="settings-section" style="background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #eee;">
+                <h3 style="font-size: 15px; margin-bottom: 8px;">Мастер-ключ (Суммаризация)</h3>
+                <small id="current-master-display" style="display: block; margin-bottom: 8px; font-family: monospace; color: #555; word-break: break-all;"></small>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="settings-master-key" style="flex-grow: 1;" placeholder="Заменить мастер-ключ...">
+                    <button id="btn-update-master" style="background: #ff9800;">Обновить</button>
                 </div>
-            <div style="display: flex; gap: 10px; margin-top: 10px;">
-                <input type="text" id="new-setting-key" placeholder="Новый ключ Gemini..." style="flex-grow: 1;">
-                <button id="btn-add-setting-key">Добавить</button>
             </div>
+
+            <div class="settings-section" style="margin-top: 15px;">
+                <h3 style="font-size: 15px; margin-bottom: 8px;">Обычные ключи (Чат)</h3>
+                <div id="settings-keys-list"></div>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <input type="text" id="new-setting-key" placeholder="Новый обычный ключ..." style="flex-grow: 1;">
+                    <button id="btn-add-setting-key">Добавить</button>
+                </div>
+            </div>
+
             <button id="btn-close-settings" style="background: #ccc; color: black; margin-top: 15px;">Закрыть</button>
         </div>
     </div>
@@ -82,7 +103,6 @@
         </div>
     </div>
 
-    <script src="config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

@@ -1,27 +1,25 @@
 // === КОНФИГУРАЦИЯ SUPABASE ===
 const SUPABASE_URL = 'https://lcxbcxagitcilklmniwe.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
-
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// === ВТОРАЯ ЛОГИКА: ЕДИНЫЙ КЛЮЧ РАЗРАБОТЧИКА ДЛЯ ХРАНЕНИЯ ПАМЯТИ ===
-const DEVELOPER_MEMORY_KEY = 'AQ.Ab8RN6KdoGGynmvGkzJh-T2fiYbwLmlrVEburYFj-MtpbmEtsQ'; 
-
 let currentUser = null;
-let userApiKeys = []; 
-let currentPersona = null;
-let currentChatHistory = []; // Оперативный контекст ИИ для текущей сессии
-let currentSummary = "";     // Долгосрочная память ИИ (загружается и сохраняется в БД)
+let userApiKeys = [];       // Массив обычных ключей для чата
+let masterApiKeyObj = null; // Объект мастер-ключа для памяти (с префиксом MASTER:: в БД)
 
-// Первая логика: Перечень моделей для ОБЫЧНОГО чата пользователей
+let currentPersona = null;
+let currentChatHistory = []; 
+let currentSummary = "";     
+
+// Первая логика: Перечень моделей для ОБЫЧНОГО чата
 const GEMINI_MODELS = [
-    'gemini-3.1-flash-lite', // средний вариант
-    'gemini-3-flash-preview', // поумнее
-    'gemini-3.5-flash', // очень умный  
-    'gemini-2.5-flash' // долнес
+    'gemini-3.1-flash-lite', 
+    'gemini-3-flash-preview', 
+    'gemini-3.5-flash',   
+    'gemini-2.5-flash' 
 ];
 
-// Вторая логика: Перечень моделей для СУММАРИЗАЦИИ ПАМЯТИ (от сильнейшей к слабейшей)
+// Вторая логика: Перечень моделей для СУММАРИЗАЦИИ ПАМЯТИ
 const MEMORY_MODELS = [
     'gemini-3.5-flash',       
     'gemini-3-flash-preview', 
@@ -42,7 +40,6 @@ supabaseClient.auth.onAuthStateChange(async (event, session) => {
     }
 });
 
-// Авторизация
 document.getElementById('btn-login').addEventListener('click', async () => {
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
@@ -62,72 +59,142 @@ document.getElementById('btn-logout').addEventListener('click', async () => {
     await supabaseClient.auth.signOut();
 });
 
-// Проверка ключей
+// === СИСТЕМА КЛЮЧЕЙ (БЕЗ ИЗМЕНЕНИЯ БАЗЫ ДАННЫХ) ===
 async function checkApiKeys() {
     const { data, error } = await supabaseClient.from('api_keys').select('id, key_value');
-    if (data && data.length > 0) {
-        userApiKeys = data; 
+    
+    userApiKeys = [];
+    masterApiKeyObj = null;
+
+    if (data) {
+        data.forEach(k => {
+            // Идентифицируем мастер-ключ по системному префиксу
+            if (k.key_value.startsWith('MASTER::')) {
+                masterApiKeyObj = k;
+            } else {
+                userApiKeys.push(k);
+            }
+        });
+    }
+
+    const needsRegular = userApiKeys.length === 0;
+    const needsMaster = !masterApiKeyObj;
+
+    if (needsRegular || needsMaster) {
+        document.getElementById('setup-regular-container').style.display = needsRegular ? 'flex' : 'none';
+        document.getElementById('setup-master-container').style.display = needsMaster ? 'flex' : 'none';
+        document.getElementById('api-key-modal').classList.remove('hidden');
+    } else {
         document.getElementById('api-key-modal').classList.add('hidden');
         startApp();
-    } else {
-        userApiKeys = [];
-        document.getElementById('api-key-modal').classList.remove('hidden');
     }
 }
 
-document.getElementById('btn-add-key').addEventListener('click', async () => {
-    const key = document.getElementById('api-key-input').value.trim();
-    if (!key) return alert("Введите ключ!");
-    const { data, error } = await supabaseClient.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]).select();
-    if (error) alert("Ошибка: " + error.message);
-    else {
-        userApiKeys.push(data[0]);
-        document.getElementById('keys-list').innerHTML += `<li>Ключ сохранен!</li>`;
-        document.getElementById('api-key-input').value = '';
-        document.getElementById('btn-finish-keys').classList.remove('hidden');
+document.getElementById('btn-save-setup-keys').addEventListener('click', async () => {
+    const needsRegular = userApiKeys.length === 0;
+    const needsMaster = !masterApiKeyObj;
+
+    const regVal = document.getElementById('setup-regular-key').value.trim();
+    const mastVal = document.getElementById('setup-master-key').value.trim();
+
+    if (needsRegular && !regVal) return alert("Введите обычный API ключ!");
+    if (needsMaster && !mastVal) return alert("Введите мастер-ключ!");
+
+    const checkReg = needsRegular ? regVal : userApiKeys[0].key_value;
+    const checkMast = needsMaster ? mastVal : masterApiKeyObj.key_value.replace('MASTER::', '');
+
+    if (checkReg === checkMast) {
+        return alert("Обычный ключ и мастер-ключ не должны совпадать!");
+    }
+
+    const inserts = [];
+    if (needsRegular) inserts.push({ user_id: currentUser.id, key_value: regVal });
+    if (needsMaster) inserts.push({ user_id: currentUser.id, key_value: `MASTER::${mastVal}` });
+
+    if (inserts.length > 0) {
+        const { error } = await supabaseClient.from('api_keys').insert(inserts);
+        if (error) alert("Ошибка: " + error.message);
+        else {
+            document.getElementById('setup-regular-key').value = '';
+            document.getElementById('setup-master-key').value = '';
+            await checkApiKeys(); 
+        }
     }
 });
 
-document.getElementById('btn-finish-keys').addEventListener('click', () => {
-    document.getElementById('api-key-modal').classList.add('hidden');
-    startApp();
-});
-
-// Настройки
+// === НАСТРОЙКИ КЛЮЧЕЙ ===
 document.getElementById('btn-settings').addEventListener('click', () => {
     renderSettingsKeys();
     document.getElementById('settings-modal').classList.remove('hidden');
 });
+
 document.getElementById('btn-close-settings').addEventListener('click', () => {
     document.getElementById('settings-modal').classList.add('hidden');
 });
 
 function renderSettingsKeys() {
+    // Отрисовка мастер-ключа (скрываем префикс)
+    const masterClean = masterApiKeyObj ? masterApiKeyObj.key_value.replace('MASTER::', '') : 'Не установлен';
+    document.getElementById('current-master-display').innerText = `Текущий: ${masterClean}`;
+    document.getElementById('settings-master-key').value = '';
+
+    // Отрисовка обычных ключей
     const container = document.getElementById('settings-keys-list');
     container.innerHTML = '';
     userApiKeys.forEach(k => {
         const row = document.createElement('div');
         row.className = 'key-row';
-        row.innerHTML = `<span class="key-text" title="${k.key_value}">${k.key_value}</span><button onclick="deleteApiKey('${k.id}')">Удалить</button>`;
+        row.innerHTML = `
+            <span class="key-text" title="${k.key_value}">${k.key_value}</span>
+            <button onclick="deleteApiKey('${k.id}')">Удалить</button>
+        `;
         container.appendChild(row);
     });
 }
 
-window.deleteApiKey = async function(id) {
-    if (userApiKeys.length <= 1) return alert("Нельзя удалить единственный ключ!");
-    const { error } = await supabaseClient.from('api_keys').delete().eq('id', id);
-    if (error) alert(error.message);
-    else {
-        userApiKeys = userApiKeys.filter(k => k.id !== id);
+// Изменение Мастер-Ключа
+document.getElementById('btn-update-master').addEventListener('click', async () => {
+    const newVal = document.getElementById('settings-master-key').value.trim();
+    if (!newVal) return alert("Введите новый мастер-ключ!");
+
+    // Проверка, чтобы мастер-ключ не совпадал ни с одним обычным
+    if (userApiKeys.some(k => k.key_value === newVal)) {
+        return alert("Мастер-ключ не может совпадать с обычным ключом!");
+    }
+
+    if (masterApiKeyObj) {
+        const { error } = await supabaseClient.from('api_keys')
+            .update({ key_value: `MASTER::${newVal}` })
+            .eq('id', masterApiKeyObj.id);
+        
+        if (error) return alert(error.message);
+        masterApiKeyObj.key_value = `MASTER::${newVal}`;
+        alert("Мастер-ключ успешно обновлен!");
         renderSettingsKeys();
     }
-};
+});
 
+// Добавление обычного ключа
 document.getElementById('btn-add-setting-key').addEventListener('click', async () => {
     const input = document.getElementById('new-setting-key');
-    const key = input.value.trim();
-    if (!key) return;
-    const { data, error } = await supabaseClient.from('api_keys').insert([{ user_id: currentUser.id, key_value: key }]).select();
+    const newVal = input.value.trim();
+    if (!newVal) return;
+
+    // Проверка, чтобы обычный ключ не совпадал с мастер-ключом
+    const currentMaster = masterApiKeyObj ? masterApiKeyObj.key_value.replace('MASTER::', '') : '';
+    if (newVal === currentMaster) {
+        return alert("Этот ключ уже используется как мастер-ключ!");
+    }
+
+    // Проверка на дубликаты обычных ключей
+    if (userApiKeys.some(k => k.key_value === newVal)) {
+        return alert("Такой обычный ключ уже добавлен!");
+    }
+
+    const { data, error } = await supabaseClient.from('api_keys')
+        .insert([{ user_id: currentUser.id, key_value: newVal }])
+        .select();
+
     if (error) alert(error.message);
     else {
         userApiKeys.push(data[0]);
@@ -136,6 +203,17 @@ document.getElementById('btn-add-setting-key').addEventListener('click', async (
     }
 });
 
+window.deleteApiKey = async function(id) {
+    if (userApiKeys.length <= 1) return alert("Нельзя удалить единственный обычный ключ!");
+    const { error } = await supabaseClient.from('api_keys').delete().eq('id', id);
+    if (error) alert(error.message);
+    else {
+        userApiKeys = userApiKeys.filter(k => k.id !== id);
+        renderSettingsKeys();
+    }
+};
+
+// === ЯДРО ПРИЛОЖЕНИЯ ===
 async function startApp() {
     document.getElementById('app-screen').classList.remove('hidden');
     document.getElementById('chat-input-area').classList.add('hidden'); 
@@ -149,7 +227,7 @@ async function startApp() {
 }
 
 async function loadPersonas() {
-    const { data, error } = await supabaseClient.from('ai_personas').select('*');
+    const { data } = await supabaseClient.from('ai_personas').select('*').order('created_at', { ascending: true });
     const list = document.getElementById('ai-list');
     list.innerHTML = '';
     if (data) {
@@ -171,7 +249,6 @@ async function loadPersonas() {
     }
 }
 
-// === ВЫБОР ИИ И РАЗДЕЛЬНАЯ ЗАГРУЗКА ИСТОРИИ И ПАМЯТИ ===
 async function selectPersona(persona) {
     currentPersona = persona;
     const chatHeader = document.getElementById('chat-header-text');
@@ -182,20 +259,17 @@ async function selectPersona(persona) {
     chatBox.innerHTML = '<i style="color:#888;">Загрузка истории...</i>'; 
     document.getElementById('chat-input-area').classList.remove('hidden');
 
-    // 1. Инициализируем ДОЛГОСРОЧНУЮ ПАМЯТЬ нейросети из нового столбца таблицы ai_personas
     currentSummary = persona.ai_memory || ""; 
-    
-    // 2. Собираем внутренний контекст ИИ: сначала скармливаем ему архив памяти (если он есть)
     currentChatHistory = [];
+    
     if (currentSummary) {
         currentChatHistory.push(
             { role: 'user', parts: [{ text: `[Важная системная память из прошлых бесед: ${currentSummary}]` }] },
-            { role: 'model', parts: [{ text: "[Внутренняя память успешно синхронизирована. Я помню контекст наших прошлых разговоров.]" }] }
+            { role: 'model', parts: [{ text: "[Внутренняя память успешно синхронизирована.]" }] }
         );
     }
 
-    // 3. Загружаем ВИЗУАЛЬНУЮ историю переписки только для отображения пользователю на экране
-    const { data, error } = await supabaseClient
+    const { data } = await supabaseClient
         .from('chat_messages')
         .select('*')
         .eq('persona_id', persona.id)
@@ -205,14 +279,8 @@ async function selectPersona(persona) {
 
     if (data && data.length > 0) {
         data.forEach(msg => {
-            // Рисуем на экране то, что видит человек
             chatBox.innerHTML += `<div class="msg ${msg.role}">${msg.message_text}</div>`;
-            
-            // Также добавляем текущие сообщения в оперативку ИИ (чтобы он ориентировался в рамках текущей сессии)
-            currentChatHistory.push({
-                role: msg.role,
-                parts: [{ text: msg.message_text }]
-            });
+            currentChatHistory.push({ role: msg.role, parts: [{ text: msg.message_text }] });
         });
         chatBox.scrollTop = chatBox.scrollHeight;
     }
@@ -220,7 +288,7 @@ async function selectPersona(persona) {
 
 // Управление персонажами
 document.getElementById('btn-new-ai').addEventListener('click', () => {
-    document.getElementById('ai-modal-title').innerText = "Создать нового ИИ";
+    document.getElementById('ai-modal-title').innerText = "Создать ИИ";
     document.getElementById('edit-ai-id').value = "";
     document.getElementById('ai-name').value = "";
     document.getElementById('ai-prompt').value = "";
@@ -261,7 +329,7 @@ async function deletePersona(id) {
     if (currentPersona && currentPersona.id === id) startApp(); else await loadPersonas();
 }
 
-// Базовый сетевой метод API
+// API Запросы
 async function fetchFromApi(model, apiKey, contents, systemInstructionText) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const body = { contents: contents };
@@ -277,134 +345,99 @@ async function fetchFromApi(model, apiKey, contents, systemInstructionText) {
     return data.candidates[0].content.parts[0].text;
 }
 
-// === ПЕРВАЯ ЛОГИКА: РАБОТА ОБЫЧНОГО ЧАТА (КЛЮЧИ ПОЛЬЗОВАТЕЛЕЙ) ===
+// Логика 1: ЧАТ (Обычные ключи)
 async function sendGeminiChatRequest(contents, systemInstructionText) {
     for (let model of GEMINI_MODELS) {
         for (let keyObj of userApiKeys) {
             try {
                 return await fetchFromApi(model, keyObj.key_value, contents, systemInstructionText);
             } catch (e) {
-                console.warn(`[Чат] Сбой на модели ${model}`);
+                console.warn(`[Чат] Сбой на модели ${model} с одним из ключей`);
             }
         }
     }
-    throw new Error("Все API-ключи пользователя или лимиты моделей чата исчерпаны.");
+    throw new Error("Все обычные API-ключи или лимиты моделей чата исчерпаны.");
 }
 
-// === ВТОРАЯ ЛОГИКА: СУММАРИЗАЦИЯ НА ВАШЕМ ОДНОМ КЛЮЧЕ (СВЕРХУ ВНИЗ) ===
+// Логика 2: ПАМЯТЬ (Только Мастер-Ключ)
 async function makeMemoryNetworkCall(contents) {
-    if (!DEVELOPER_MEMORY_KEY || DEVELOPER_MEMORY_KEY === 'ВАШ_ЛИЧНЫЙ_API_КЛЮЧ_GEMINI') {
-        throw new Error("Критическая ошибка: Не задан мастер-ключ разработчика для оптимизации памяти.");
-    }
+    if (!masterApiKeyObj) throw new Error("Мастер-ключ не найден.");
+    
+    const cleanMasterKey = masterApiKeyObj.key_value.replace('MASTER::', '');
+
     for (let model of MEMORY_MODELS) {
         try {
-            return await fetchFromApi(model, DEVELOPER_MEMORY_KEY, contents, "Ты — системный модуль сжатия памяти контекста. Пиши только чистые факты.");
+            return await fetchFromApi(model, cleanMasterKey, contents, "Ты — системный модуль сжатия памяти контекста. Пиши только чистые факты.");
         } catch (e) {
-            console.warn(`[Модуль памяти] Модель ${model} выдала ошибку. Спуск по каскаду ниже...`);
+            console.warn(`[Модуль памяти] Модель ${model} выдала ошибку.`);
         }
     }
-    throw new Error("Все модели каскада памяти на мастер-ключе вернули ошибку.");
+    throw new Error("Мастер-ключ исчерпал лимиты на всех моделях суммаризации.");
 }
 
-// === ОПТИМИЗАЦИЯ ПАМЯТИ ПРИ ДОСТИЖЕНИИ 30 СООБЩЕНИЙ С СОХРАНЕНИЕМ В БД ===
 async function compressMemory() {
-    console.log("Запущена оптимизация памяти ИИ (достигнут лимит в 30 сообщений)...");
-    
-    const dialogSnapshot = currentChatHistory.map(m => {
-        return `${m.role === 'user' ? 'Пользователь' : 'ИИ'}: ${m.parts[0].text}`;
-    }).join('\n');
+    console.log("Запущена оптимизация памяти ИИ...");
+    const dialogSnapshot = currentChatHistory.map(m => `${m.role === 'user' ? 'Пользователь' : 'ИИ'}: ${m.parts[0].text}`).join('\n');
 
-    const compressionPrompt = `Внимательно изучи историю диалога. Извлеки все важные факты о пользователе, контекст беседы и ключевые договоренности. Сформируй обновленную лаконичную базу знаний для ИИ, объединив её с предыдущей памятью.
-    
-    Предыдущая память:
-    ${currentSummary || 'Отсутствует'}
-    
-    Новые сообщения для анализа:
-    ${dialogSnapshot}`;
+    const compressionPrompt = `Извлеки все важные факты о пользователе и контекст. Сформируй обновленную базу знаний.
+    Предыдущая память: ${currentSummary || 'Отсутствует'}
+    Новые сообщения: ${dialogSnapshot}`;
 
     try {
-        // Выполняем суммаризацию по ВТОРОЙ логике на вашем ключе
         const compressedResult = await makeMemoryNetworkCall([{ role: 'user', parts: [{ text: compressionPrompt }] }]);
         currentSummary = compressedResult;
 
-        // !!! КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: Намертво сохраняем эту память в базу данных !!!
-        await supabaseClient
-            .from('ai_personas')
-            .update({ ai_memory: currentSummary })
-            .eq('id', currentPersona.id);
+        await supabaseClient.from('ai_personas').update({ ai_memory: currentSummary }).eq('id', currentPersona.id);
 
-        // Пересобираем оперативную память ИИ, разгружая контекст
         currentChatHistory = [
             { role: 'user', parts: [{ text: `[Важная системная память из прошлых бесед: ${currentSummary}]` }] },
-            { role: 'model', parts: [{ text: "[Контекст успешно оптимизирован и сохранен в БД.]" }] }
+            { role: 'model', parts: [{ text: "[Контекст успешно оптимизирован.]" }] }
         ];
-        console.log("Долгосрочная память ИИ обновлена в Базе Данных.");
+        console.log("Память обновлена.");
     } catch (e) {
-        console.error("Не удалось оптимизировать память нейросети:", e);
+        console.error("Не удалось оптимизировать память:", e);
     }
 }
 
-// === КНОПКА «ОЧИСТИТЬ ЧАТ» (ОЧИЩАЕТ ЭКРАН, НО СНАЧАЛА СОХРАНЯЕТ ПАМЯТЬ) ===
 document.getElementById('btn-clear-chat').addEventListener('click', async () => {
     if (!currentPersona) return;
-    if (!confirm("Очистить историю сообщений с экрана? Нейросеть сохранит контекст этой беседы перед удалением.")) return;
+    if (!confirm("Очистить историю сообщений? Контекст будет сохранен в долгосрочную память.")) return;
 
     const chatBox = document.getElementById('chat-messages');
-    
-    // Добавляем визуальный индикатор, так как API-запрос на сжатие займет пару секунд
-    chatBox.innerHTML += `<div class="msg model typing">Архивирую последние сообщения в память...</div>`;
+    chatBox.innerHTML += `<div class="msg model typing">Архивирую сообщения в память...</div>`;
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    // 1. ПРИНУДИТЕЛЬНО сохраняем остатки переписки (даже если их меньше 30)
-    if (currentChatHistory.length > 0) {
-        await compressMemory();
-    }
+    if (currentChatHistory.length > 0) await compressMemory();
 
-    // 2. Удаляем переписку только из таблицы сообщений (визуальный слой)
-    const { error } = await supabaseClient
-        .from('chat_messages')
-        .delete()
-        .eq('persona_id', currentPersona.id);
+    const { error } = await supabaseClient.from('chat_messages').delete().eq('persona_id', currentPersona.id);
 
     if (error) {
         alert("Ошибка очистки: " + error.message);
-        // Убираем индикатор в случае ошибки
         chatBox.removeChild(chatBox.lastChild);
     } else {
-        // 3. Очищаем экран пользователя
         chatBox.innerHTML = '';
-        alert("Экран очищен! Все важные детали из последних сообщений успешно добавлены в долгосрочную память ИИ.");
+        alert("Экран очищен! Детали сохранены в памяти ИИ.");
     }
 });
 
-// === ОТПРАВКА СООБЩЕНИЙ ===
 document.getElementById('btn-send').addEventListener('click', async () => {
     const input = document.getElementById('message-input');
     const text = input.value.trim();
     if (!text || !currentPersona) return;
 
     const chatBox = document.getElementById('chat-messages');
-    
     chatBox.innerHTML += `<div class="msg user">${text}</div>`;
     input.value = '';
     chatBox.scrollTop = chatBox.scrollHeight;
 
     currentChatHistory.push({ role: 'user', parts: [{ text: text }] });
 
-    // Пишем в БД для отображения на экране
     await supabaseClient.from('chat_messages').insert([{
-        user_id: currentUser.id,
-        persona_id: currentPersona.id,
-        role: 'user',
-        message_text: text
+        user_id: currentUser.id, persona_id: currentPersona.id, role: 'user', message_text: text
     }]);
 
-    // Каждые 30 сообщений сессии сжимаем память
-    if (currentChatHistory.length >= 30) {
-        await compressMemory();
-    }
+    if (currentChatHistory.length >= 30) await compressMemory();
 
-    // Включаем индикатор "Печатает..."
     const typingIndicator = document.createElement('div');
     typingIndicator.className = 'msg model typing';
     typingIndicator.innerText = 'Печатает...';
@@ -412,9 +445,7 @@ document.getElementById('btn-send').addEventListener('click', async () => {
     chatBox.scrollTop = chatBox.scrollHeight;
 
     try {
-        // Запрос ответа по первой логике (ключи пользователя)
         const reply = await sendGeminiChatRequest(currentChatHistory, currentPersona.system_prompt);
-        
         typingIndicator.remove();
 
         chatBox.innerHTML += `<div class="msg model">${reply}</div>`;
@@ -423,10 +454,7 @@ document.getElementById('btn-send').addEventListener('click', async () => {
         currentChatHistory.push({ role: 'model', parts: [{ text: reply }] });
 
         await supabaseClient.from('chat_messages').insert([{
-            user_id: currentUser.id,
-            persona_id: currentPersona.id,
-            role: 'model',
-            message_text: reply
+            user_id: currentUser.id, persona_id: currentPersona.id, role: 'model', message_text: reply
         }]);
 
     } catch (error) {
