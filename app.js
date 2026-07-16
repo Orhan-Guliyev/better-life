@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // === ВТОРАЯ ЛОГИКА: ЕДИНЫЙ КЛЮЧ РАЗРАБОТЧИКА ДЛЯ ХРАНЕНИЯ ПАМЯТИ ===
-const DEVELOPER_MEMORY_KEY = 'ВАШ_ЛИЧНЫЙ_API_КЛЮЧ_GEMINI'; 
+const DEVELOPER_MEMORY_KEY = 'AQ.Ab8RN6L5U4FF6vFus5KbfQOFkDZ9fdbSylZbk7UbKobOfLFoLA'; 
 
 let currentUser = null;
 let userApiKeys = []; 
@@ -15,10 +15,10 @@ let currentSummary = "";     // Долгосрочная память ИИ (за
 
 // Первая логика: Перечень моделей для ОБЫЧНОГО чата пользователей
 const GEMINI_MODELS = [
-    'gemini-3.1-flash-lite', 
-    'gemini-3-flash-preview', 
-    'gemini-3.5-flash', 
-    'gemini-2.5-flash' 
+    'gemini-3.1-flash-lite', // средний вариант
+    'gemini-3-flash-preview', // поумнее
+    'gemini-3.5-flash', // очень умный  
+    'gemini-2.5-flash' // долнес
 ];
 
 // Вторая логика: Перечень моделей для СУММАРИЗАЦИИ ПАМЯТИ (от сильнейшей к слабейшей)
@@ -344,12 +344,23 @@ async function compressMemory() {
     }
 }
 
-// === КНОПКА «ОЧИСТИТЬ ЧАТ» (ОЧИЩАЕТ ЭКРАН, НЕ ТРОГАЯ ПАМЯТЬ НЕЙРОСЕТИ) ===
+// === КНОПКА «ОЧИСТИТЬ ЧАТ» (ОЧИЩАЕТ ЭКРАН, НО СНАЧАЛА СОХРАНЯЕТ ПАМЯТЬ) ===
 document.getElementById('btn-clear-chat').addEventListener('click', async () => {
     if (!currentPersona) return;
-    if (!confirm("Очистить историю сообщений с экрана? Нейросеть всё равно продолжит помнить контекст общения.")) return;
+    if (!confirm("Очистить историю сообщений с экрана? Нейросеть сохранит контекст этой беседы перед удалением.")) return;
 
-    // Удаляем переписку только из таблицы сообщений (удаляется визуальный слой)
+    const chatBox = document.getElementById('chat-messages');
+    
+    // Добавляем визуальный индикатор, так как API-запрос на сжатие займет пару секунд
+    chatBox.innerHTML += `<div class="msg model typing">Архивирую последние сообщения в память...</div>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    // 1. ПРИНУДИТЕЛЬНО сохраняем остатки переписки (даже если их меньше 30)
+    if (currentChatHistory.length > 0) {
+        await compressMemory();
+    }
+
+    // 2. Удаляем переписку только из таблицы сообщений (визуальный слой)
     const { error } = await supabaseClient
         .from('chat_messages')
         .delete()
@@ -357,10 +368,12 @@ document.getElementById('btn-clear-chat').addEventListener('click', async () => 
 
     if (error) {
         alert("Ошибка очистки: " + error.message);
+        // Убираем индикатор в случае ошибки
+        chatBox.removeChild(chatBox.lastChild);
     } else {
-        // Очищаем экран пользователя
-        document.getElementById('chat-messages').innerHTML = '';
-        alert("Экран очищен! Внутренняя память ИИ осталась нетронутой в базе данных.");
+        // 3. Очищаем экран пользователя
+        chatBox.innerHTML = '';
+        alert("Экран очищен! Все важные детали из последних сообщений успешно добавлены в долгосрочную память ИИ.");
     }
 });
 
