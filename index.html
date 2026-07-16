@@ -96,7 +96,12 @@
                 <button id="btn-clear-chat" class="hidden" style="background: #ffeaeb; color: #ff4d4d; border: 1px solid #ffccd0; padding: 5px 12px; font-size: 13px; border-radius: 5px;">Очистить чат</button>
             </div>
             <div id="chat-messages"></div>
+            <div id="attachment-preview" class="attachment-preview hidden"></div>
+            
             <div class="chat-input-area hidden" id="chat-input-area">
+                <input type="file" id="file-input" multiple accept="image/*" class="hidden">
+                <button id="btn-attach" title="Прикрепить фото" style="background: #e4e6eb; color: black; font-size: 18px; padding: 10px 15px;">📎</button>
+                
                 <input type="text" id="message-input" placeholder="Напишите сообщение...">
                 <button id="btn-send">Отправить</button>
             </div>
