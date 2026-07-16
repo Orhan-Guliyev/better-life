@@ -325,7 +325,7 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
         document.getElementById('ai-prompt').value = persona.system_prompt;
         
         // Установка сохраненной иконки бота
-        const savedIcon = persona.avatar_url || persona.logo_url || 'fa-robot';
+        const savedIcon = persona.logo_url || 'fa-robot';
         document.querySelectorAll('.icon-option').forEach(el => el.classList.remove('active'));
         const iconEl = document.querySelector(`.icon-option[data-icon="${savedIcon}"]`);
         if (iconEl) {
@@ -352,7 +352,6 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
             user_id: currentUser.id, 
             name, 
             system_prompt: prompt,
-            avatar_url: selectedIcon, // Сохраняем класс иконки (напр. "fa-dumbbell") в БД
             logo_url: selectedIcon 
         };
         
@@ -570,8 +569,8 @@ async function loadPersonas() {
             }
             li.onclick = () => selectPersona(persona);
             
-            // Получаем аватар (проверяем оба возможных поля avatar_url и logo_url)
-            const avatarHtml = getAvatarHtml(persona.name, persona.avatar_url || persona.logo_url);
+            // Получаем аватар 
+            const avatarHtml = getAvatarHtml(persona.name, persona.logo_url);
             
             li.innerHTML = `
                 ${avatarHtml}
@@ -601,7 +600,7 @@ async function selectPersona(persona) {
     
     // Ставим аватарку и имя в шапке чата
     chatHeader.innerText = persona.name;
-    avatarHeaderContainer.innerHTML = getAvatarHtml(persona.name, persona.avatar_url || persona.logo_url, true);
+    avatarHeaderContainer.innerHTML = getAvatarHtml(persona.name, persona.logo_url, true);
     
     document.getElementById('btn-clear-chat').classList.remove('hidden');
     chatBox.innerHTML = '<i style="color:#888;">Загрузка истории...</i>'; 
@@ -638,7 +637,7 @@ function openEditModal(persona) {
     document.getElementById('ai-modal-title').innerText = "Редактировать ИИ";
     document.getElementById('edit-ai-id').value = persona.id;
     document.getElementById('ai-name').value = persona.name;
-    document.getElementById('ai-avatar-url').value = persona.avatar_url || persona.logo_url || "";
+    document.getElementById('ai-avatar-url').value = persona.logo_url || "";
     document.getElementById('ai-prompt').value = persona.system_prompt;
     document.getElementById('new-ai-modal').classList.remove('hidden');
 }
