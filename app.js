@@ -5,7 +5,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // === ВТОРАЯ ЛОГИКА: ЕДИНЫЙ КЛЮЧ РАЗРАБОТЧИКА ДЛЯ ХРАНЕНИЯ ПАМЯТИ ===
-const DEVELOPER_MEMORY_KEY = 'AQ.Ab8RN6L5U4FF6vFus5KbfQOFkDZ9fdbSylZbk7UbKobOfLFoLA'; 
+const DEVELOPER_MEMORY_KEY = 'AQ.Ab8RN6KW_eX01t7zfC7Vt36nq1-cFKgepsVSAr4mfUNs4Unfdg'; 
 
 let currentUser = null;
 let userApiKeys = []; 
