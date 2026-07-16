@@ -217,9 +217,9 @@ async function selectPersona(persona) {
 
     if (data && data.length > 0) {
         data.forEach(msg => {
-            // Отрисовываем
+            // Отрисовываем визуально в окне
             chatBox.innerHTML += `<div class="msg ${msg.role}">${msg.message_text}</div>`;
-            // Запоминаем для Gemini
+            // Накапливаем структурированный массив контекста диалога для Gemini
             currentChatHistory.push({
                 role: msg.role,
                 parts: [{ text: msg.message_text }]
@@ -298,7 +298,7 @@ async function deletePersona(id) {
     }
 }
 
-// === РОУТИНГ КЛЮЧЕЙ И ОТПРАВКА КОНТЕКСТА В GEMINI ===
+// === РОУТИНГ КЛЮЧЕЙ И ОТПРАВКА СТРУКТУРИРОВАННОГО КОНТЕКСТА В GEMINI ===
 async function sendGeminiRequest() {
     for (let model of GEMINI_MODELS) {
         for (let keyObj of userApiKeys) {
@@ -311,7 +311,7 @@ async function sendGeminiRequest() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         system_instruction: { parts: [{ text: currentPersona.system_prompt }]},
-                        contents: currentChatHistory // Передаем всю историю!
+                        contents: currentChatHistory // Отправляем полный массив переписки
                     })
                 });
 
@@ -325,10 +325,14 @@ async function sendGeminiRequest() {
                     throw new Error(data.error?.message || 'Ошибка API');
                 }
 
-                return data.candidates[0].content.parts[0].text;
+                if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+                    return data.candidates[0].content.parts[0].text;
+                } else {
+                    throw new Error("Некорректный формат ответа от Gemini API");
+                }
 
             } catch (error) {
-                console.error("Попытка неудачна:", error);
+                console.error(`Попытка работы с моделью ${model} не удалась:`, error);
             }
         }
     }
@@ -343,44 +347,52 @@ document.getElementById('btn-send').addEventListener('click', async () => {
 
     const chatBox = document.getElementById('chat-messages');
     
-    // 1. Отрисовка сообщения юзера
+    // 1. Отображаем сообщение пользователя на веб-интерфейсе
     chatBox.innerHTML += `<div class="msg user">${text}</div>`;
     input.value = '';
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    // 2. Добавление в локальный контекст
+    // 2. Добавляем сообщение пользователя в локальный контекст диалога
     currentChatHistory.push({ role: 'user', parts: [{ text: text }] });
 
-    // 3. Сохранение сообщения юзера в БД
-    await supabaseClient.from('chat_messages').insert([{
+    // 3. Сохраняем сообщение пользователя в Supabase в таблицу chat_messages
+    const { error: userMsgError } = await supabaseClient.from('chat_messages').insert([{
         user_id: currentUser.id,
         persona_id: currentPersona.id,
         role: 'user',
         message_text: text
     }]);
+    
+    if (userMsgError) {
+        console.error("Ошибка при сохранении сообщения пользователя:", userMsgError);
+    }
 
     try {
-        // 4. Отправка запроса с полным контекстом в Gemini
+        // 4. Запрашиваем ответ ИИ с передачей полной истории диалога
         const reply = await sendGeminiRequest();
         
-        // 5. Отрисовка ответа ИИ
+        // 5. Выводим ответ модели на экран
         chatBox.innerHTML += `<div class="msg model">${reply}</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
 
-        // 6. Добавление ответа ИИ в локальный контекст
+        // 6. Добавляем ответ модели в локальный контекст диалога
         currentChatHistory.push({ role: 'model', parts: [{ text: reply }] });
 
-        // 7. Сохранение ответа ИИ в БД
-        await supabaseClient.from('chat_messages').insert([{
+        // 7. Сохраняем ответ модели в Supabase в таблицу chat_messages
+        const { error: modelMsgError } = await supabaseClient.from('chat_messages').insert([{
             user_id: currentUser.id,
             persona_id: currentPersona.id,
             role: 'model',
             message_text: reply
         }]);
 
+        if (modelMsgError) {
+            console.error("Ошибка при сохранении ответа модели:", modelMsgError);
+        }
+
     } catch (error) {
         alert(error.message);
-        // Откат визуала и истории в случае ошибки API (нет интернета или лимиты)
+        // В случае критической ошибки API удаляем последнее сообщение пользователя из истории диалога и интерфейса
         if (chatBox.lastElementChild) {
             chatBox.lastElementChild.remove(); 
         }
