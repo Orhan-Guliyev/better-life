@@ -4,15 +4,14 @@ const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let userApiKeys = [];       // Массив обычных ключей для чата
-let masterApiKeyObj = null; // Объект мастер-ключа для памяти (с префиксом MASTER:: в БД)
+let userApiKeys = [];       
+let masterApiKeyObj = null; 
 
 let currentPersona = null;
 let currentChatHistory = []; 
 let currentSummary = "";     
-let currentAttachments = []; // Массив для файлов перед отправкой
+let currentAttachments = []; 
 
-// Первая логика: Перечень моделей для ОБЫЧНОГО чата
 const GEMINI_MODELS = [
     'gemini-3.1-flash-lite', 
     'gemini-3-flash-preview', 
@@ -20,7 +19,6 @@ const GEMINI_MODELS = [
     'gemini-2.5-flash' 
 ];
 
-// Вторая логика: Перечень моделей для СУММАРИЗАЦИИ ПАМЯТИ
 const MEMORY_MODELS = [
     'gemini-3.5-flash',       
     'gemini-3-flash-preview', 
@@ -28,16 +26,111 @@ const MEMORY_MODELS = [
     'gemini-2.5-flash'        
 ];
 
-// === ЖДЕМ ЗАГРУЗКИ DOM ПЕРЕД ПРИВЯЗКОЙ СОБЫТИЙ ===
+// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ БЕЗОПАСНОСТИ И ОФОРМЛЕНИЯ ===
+
+// Маскирование ключей (видим только последние 4 символа)
+function maskKey(key) {
+    if (!key) return 'Не установлен';
+    const clean = key.replace('MASTER::', '');
+    if (clean.length <= 10) return '***';
+    return `${clean.substring(0, 6)}...${clean.slice(-4)}`;
+}
+
+// Генерация аватаров (Ссылка или цветной круг с первой буквой)
+function getAvatarHtml(name, url, isSmall = false) {
+    const sizeClass = isSmall ? 'style="width:35px; height:35px; font-size:14px;"' : '';
+    if (url && url.trim() !== '') {
+        return `<img src="${url}" class="avatar-img" ${sizeClass} alt="${name}">`;
+    }
+    const firstLetter = name ? name.trim().charAt(0).toUpperCase() : '?';
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const colors = ['#e57373', '#f06292', '#ba68c8', '#9575cd', '#7986cb', '#64b5f6', '#4fc3f7', '#4dd0e1', '#4db6ac', '#81c784', '#a1887f'];
+    const colorIndex = Math.abs(hash) % colors.length;
+    const bgColor = colors[colorIndex];
+    
+    return `<div class="avatar-fallback" style="background-color: ${bgColor};" ${sizeClass}>${firstLetter}</div>`;
+}
+
+// === СИСТЕМА УПРАВЛЕНИЯ ТЕМОЙ ===
+function initTheme() {
+    const savedMode = localStorage.getItem('theme-mode') || 'light';
+    const savedColor = localStorage.getItem('theme-color') || '#2481cc';
+    
+    // Переключение темы (светлая / темная)
+    if (savedMode === 'dark') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('btn-theme-toggle').innerHTML = '<i class="fa-solid fa-sun"></i>';
+    } else {
+        document.body.classList.remove('dark-mode');
+        document.getElementById('btn-theme-toggle').innerHTML = '<i class="fa-solid fa-moon"></i>';
+    }
+    
+    // Установка кастомного цвета
+    document.documentElement.style.setProperty('--primary-color', savedColor);
+    document.documentElement.style.setProperty('--primary-hover', adjustColorBrightness(savedColor, -15));
+    
+    // Выделение активного кружка в настройках
+    document.querySelectorAll('.color-dot').forEach(dot => {
+        if (dot.getAttribute('data-color') === savedColor) {
+            dot.classList.add('active');
+        } else {
+            dot.classList.remove('active');
+        }
+    });
+}
+
+function toggleThemeMode() {
+    const isDark = document.body.classList.toggle('dark-mode');
+    localStorage.setItem('theme-mode', isDark ? 'dark' : 'light');
+    document.getElementById('btn-theme-toggle').innerHTML = isDark ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+}
+
+function setThemeColor(color) {
+    localStorage.setItem('theme-color', color);
+    document.documentElement.style.setProperty('--primary-color', color);
+    document.documentElement.style.setProperty('--primary-hover', adjustColorBrightness(color, -15));
+    
+    document.querySelectorAll('.color-dot').forEach(dot => {
+        if (dot.getAttribute('data-color') === color) {
+            dot.classList.add('active');
+        } else {
+            dot.classList.remove('active');
+        }
+    });
+}
+
+function adjustColorBrightness(hex, percent) {
+    let num = parseInt(hex.replace("#",""), 16),
+        amt = Math.round(2.55 * percent),
+        R = (num >> 16) + amt,
+        G = (num >> 8 & 0x00FF) + amt,
+        B = (num & 0x0000FF) + amt;
+    return "#" + (0x1000000 + (R<255?R<0?0:R:255)*0x10000 + (G<255?G<0?0:G:255)*0x100 + (B<255?B<0?0:B:255)).toString(16).slice(1);
+}
+
+// === ЖДЕМ ЗАГРУЗКИ DOM ===
 document.addEventListener('DOMContentLoaded', () => {
 
-    // Открытие окна выбора файлов
-    document.getElementById('btn-attach').addEventListener('click', (e) => { // Добавили 'e' здесь
+    initTheme(); // Инициализация сохраненной темы
+
+    // Клик на переключатель темы
+    document.getElementById('btn-theme-toggle').addEventListener('click', toggleThemeMode);
+
+    // События выбора цвета
+    document.querySelectorAll('.color-dot').forEach(dot => {
+        dot.addEventListener('click', (e) => {
+            setThemeColor(e.target.getAttribute('data-color'));
+        });
+    });
+
+    document.getElementById('btn-attach').addEventListener('click', (e) => {
         e.preventDefault();
         document.getElementById('file-input').click();
     });
 
-    // Обработка выбранных файлов
     document.getElementById('file-input').addEventListener('change', async (e) => {
         const files = e.target.files;
         for (let file of files) {
@@ -45,10 +138,9 @@ document.addEventListener('DOMContentLoaded', () => {
             currentAttachments.push({ file, base64 });
         }
         renderPreviews();
-        e.target.value = ''; // Сбрасываем инпут
+        e.target.value = ''; 
     });
 
-    // === СЛУШАТЕЛЬ СЕССИИ ===
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
         if (session) {
             currentUser = session.user;
@@ -112,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // === НАСТРОЙКИ КЛЮЧЕЙ ===
     document.getElementById('btn-settings').addEventListener('click', () => {
         renderSettingsKeys();
         document.getElementById('settings-modal').classList.remove('hidden');
@@ -122,12 +213,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('settings-modal').classList.add('hidden');
     });
 
-    // Изменение Мастер-Ключа
     document.getElementById('btn-update-master').addEventListener('click', async () => {
         const newVal = document.getElementById('settings-master-key').value.trim();
         if (!newVal) return alert("Введите новый мастер-ключ!");
 
-        // Проверка, чтобы мастер-ключ не совпадал ни с одним обычным
         if (userApiKeys.some(k => k.key_value === newVal)) {
             return alert("Мастер-ключ не может совпадать с обычным ключом!");
         }
@@ -144,19 +233,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Добавление обычного ключа
     document.getElementById('btn-add-setting-key').addEventListener('click', async () => {
         const input = document.getElementById('new-setting-key');
         const newVal = input.value.trim();
         if (!newVal) return;
 
-        // Проверка, чтобы обычный ключ не совпадал с мастер-ключом
         const currentMaster = masterApiKeyObj ? masterApiKeyObj.key_value.replace('MASTER::', '') : '';
         if (newVal === currentMaster) {
             return alert("Этот ключ уже используется как мастер-ключ!");
         }
 
-        // Проверка на дубликаты обычных ключей
         if (userApiKeys.some(k => k.key_value === newVal)) {
             return alert("Такой обычный ключ уже добавлен!");
         }
@@ -173,11 +259,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Управление персонажами
     document.getElementById('btn-new-ai').addEventListener('click', () => {
         document.getElementById('ai-modal-title').innerText = "Создать ИИ";
         document.getElementById('edit-ai-id').value = "";
         document.getElementById('ai-name').value = "";
+        document.getElementById('ai-avatar-url').value = "";
         document.getElementById('ai-prompt').value = "";
         document.getElementById('new-ai-modal').classList.remove('hidden');
     });
@@ -189,14 +275,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-save-ai').addEventListener('click', async () => {
         const id = document.getElementById('edit-ai-id').value;
         const name = document.getElementById('ai-name').value.trim();
+        const avatarUrl = document.getElementById('ai-avatar-url').value.trim();
         const prompt = document.getElementById('ai-prompt').value.trim();
         
         if (!name || !prompt) return alert("Заполните поля!");
         
+        // Поддерживаем как "avatar_url", так и "logo_url" на случай любого дизайна вашей таблицы
+        const payload = { 
+            user_id: currentUser.id, 
+            name, 
+            system_prompt: prompt,
+            avatar_url: avatarUrl,
+            logo_url: avatarUrl
+        };
+        
         if (id) {
-            await supabaseClient.from('ai_personas').update({ name, system_prompt: prompt }).eq('id', id);
+            delete payload.user_id; // При обновлении ID юзера менять не нужно
+            await supabaseClient.from('ai_personas').update(payload).eq('id', id);
         } else {
-            await supabaseClient.from('ai_personas').insert([{ user_id: currentUser.id, name, system_prompt: prompt }]);
+            await supabaseClient.from('ai_personas').insert([payload]);
         }
         document.getElementById('new-ai-modal').classList.add('hidden');
         await loadPersonas();
@@ -227,34 +324,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const input = document.getElementById('message-input');
         const text = input.value.trim();
         
-        // Если нет ни текста, ни картинок - ничего не делаем
         if (!text && currentAttachments.length === 0) return;
         if (!currentPersona) return;
 
         const chatBox = document.getElementById('chat-messages');
-        const attachmentsToSend = [...currentAttachments]; // Копируем текущие аттачи
+        const attachmentsToSend = [...currentAttachments]; 
         
-        // Очищаем UI сразу для ощущения мгновенного отклика
         input.value = '';
         currentAttachments = [];
         renderPreviews();
 
-        // 1. Формируем HTML для отображения в чате пользователя
         let userMessageHtml = '';
         attachmentsToSend.forEach(att => {
-            userMessageHtml += `<img src="${att.base64}" class="chat-img">`; // Временно показываем base64
+            userMessageHtml += `<img src="${att.base64}" class="chat-img">`; 
         });
         if (text) userMessageHtml += `<div>${text}</div>`;
         
         chatBox.innerHTML += `<div class="msg user">${userMessageHtml}</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
 
-        // 2. Формируем Parts для Gemini
         let geminiParts = [];
         if (text) geminiParts.push({ text: text });
         
         attachmentsToSend.forEach(att => {
-            // Отрезаем "data:image/jpeg;base64," чтобы передать чистый код в Gemini
             const pureBase64 = att.base64.split(',')[1];
             geminiParts.push({
                 inlineData: {
@@ -266,7 +358,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentChatHistory.push({ role: 'user', parts: geminiParts });
 
-        // Пока ИИ думает, загружаем картинки в Supabase на фоне
         let dbMessageHtml = '';
         const uploadIndicator = document.createElement('div');
         uploadIndicator.className = 'msg model typing';
@@ -275,7 +366,6 @@ document.addEventListener('DOMContentLoaded', () => {
         chatBox.scrollTop = chatBox.scrollHeight;
 
         try {
-            // Загружаем файлы в Supabase Storage
             for (let att of attachmentsToSend) {
                 const fileExt = att.file.name.split('.').pop();
                 const fileName = `${currentUser.id}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
@@ -286,13 +376,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                 if (uploadError) throw new Error("Ошибка загрузки картинки: " + uploadError.message);
 
-                // Получаем публичную ссылку
                 const { data: publicUrlData } = supabaseClient.storage.from('chat-images').getPublicUrl(fileName);
                 dbMessageHtml += `<img src="${publicUrlData.publicUrl}" class="chat-img"><br>`;
             }
             if (text) dbMessageHtml += text;
 
-            // Сохраняем сообщение пользователя (с публичными ссылками на фото) в БД
             await supabaseClient.from('chat_messages').insert([{
                 user_id: currentUser.id, 
                 persona_id: currentPersona.id, 
@@ -300,22 +388,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 message_text: dbMessageHtml || text 
             }]);
 
-            // Меняем индикатор на "ИИ думает"
             uploadIndicator.innerText = 'Печатает...';
 
             if (currentChatHistory.length >= 30) await compressMemory();
 
-            // Отправляем запрос в Gemini
             const reply = await sendGeminiChatRequest(currentChatHistory, currentPersona.system_prompt);
             uploadIndicator.remove();
 
-            // Показываем ответ ИИ
             chatBox.innerHTML += `<div class="msg model">${reply}</div>`;
             chatBox.scrollTop = chatBox.scrollHeight;
 
             currentChatHistory.push({ role: 'model', parts: [{ text: reply }] });
 
-            // Сохраняем ответ ИИ в БД
             await supabaseClient.from('chat_messages').insert([{
                 user_id: currentUser.id, persona_id: currentPersona.id, role: 'model', message_text: reply
             }]);
@@ -323,7 +407,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             if (uploadIndicator) uploadIndicator.remove();
             alert(error.message);
-            // Удаляем сломанное сообщение из истории
             if (chatBox.lastElementChild && chatBox.lastElementChild.classList.contains('user')) {
                 chatBox.lastElementChild.remove();
             }
@@ -331,9 +414,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-}); // КОНЕЦ БЛОКА DOMContentLoaded
+}); 
 
-// === СИСТЕМА КЛЮЧЕЙ (БЕЗ ИЗМЕНЕНИЯ БАЗЫ ДАННЫХ) ===
+// === СИСТЕМА КЛЮЧЕЙ С МАСКИРОВАНИЕМ ===
 async function checkApiKeys() {
     const { data, error } = await supabaseClient.from('api_keys').select('id, key_value');
     
@@ -364,8 +447,9 @@ async function checkApiKeys() {
 }
 
 function renderSettingsKeys() {
-    const masterClean = masterApiKeyObj ? masterApiKeyObj.key_value.replace('MASTER::', '') : 'Не установлен';
-    document.getElementById('current-master-display').innerText = `Текущий: ${masterClean}`;
+    // Маскируем отображение Мастер-ключа
+    const masterVal = masterApiKeyObj ? masterApiKeyObj.key_value : null;
+    document.getElementById('current-master-display').innerText = `Текущий: ${maskKey(masterVal)}`;
     document.getElementById('settings-master-key').value = '';
 
     const container = document.getElementById('settings-keys-list');
@@ -373,8 +457,9 @@ function renderSettingsKeys() {
     userApiKeys.forEach(k => {
         const row = document.createElement('div');
         row.className = 'key-row';
+        // Маскируем отображение обычных ключей
         row.innerHTML = `
-            <span class="key-text" title="${k.key_value}">${k.key_value}</span>
+            <span class="key-text" title="Ключ скрыт в целях безопасности">${maskKey(k.key_value)}</span>
             <button onclick="deleteApiKey('${k.id}')">Удалить</button>
         `;
         container.appendChild(row);
@@ -396,6 +481,7 @@ async function startApp() {
     document.getElementById('app-screen').classList.remove('hidden');
     document.getElementById('chat-input-area').classList.add('hidden'); 
     document.getElementById('chat-header-text').innerText = `Выберите ИИ для начала общения`;
+    document.getElementById('active-chat-avatar').innerHTML = '';
     document.getElementById('btn-clear-chat').classList.add('hidden');
     document.getElementById('chat-messages').innerHTML = '';
     currentPersona = null;
@@ -412,12 +498,20 @@ async function loadPersonas() {
         data.forEach(persona => {
             const li = document.createElement('li');
             li.className = 'ai-item';
+            if (currentPersona && currentPersona.id === persona.id) {
+                li.classList.add('active');
+            }
             li.onclick = () => selectPersona(persona);
+            
+            // Получаем аватар (проверяем оба возможных поля avatar_url и logo_url)
+            const avatarHtml = getAvatarHtml(persona.name, persona.avatar_url || persona.logo_url);
+            
             li.innerHTML = `
+                ${avatarHtml}
                 <span class="ai-name">${persona.name}</span>
                 <div class="ai-actions">
-                    <button class="btn-edit">✏️</button>
-                    <button class="btn-del">🗑️</button>
+                    <button class="btn-edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="btn-del"><i class="fa-solid fa-trash"></i></button>
                 </div>
             `;
             li.querySelector('.btn-edit').addEventListener('click', (e) => { e.stopPropagation(); openEditModal(persona); });
@@ -429,10 +523,19 @@ async function loadPersonas() {
 
 async function selectPersona(persona) {
     currentPersona = persona;
+    
+    // Подсвечиваем активного бота в боковом меню
+    document.querySelectorAll('.ai-item').forEach(el => el.classList.remove('active'));
+    await loadPersonas(); // Перегрузим список чтобы обновился класс .active и аватар
+
     const chatHeader = document.getElementById('chat-header-text');
     const chatBox = document.getElementById('chat-messages');
+    const avatarHeaderContainer = document.getElementById('active-chat-avatar');
     
-    chatHeader.innerText = `Чат: ${persona.name}`;
+    // Ставим аватарку и имя в шапке чата
+    chatHeader.innerText = persona.name;
+    avatarHeaderContainer.innerHTML = getAvatarHtml(persona.name, persona.avatar_url || persona.logo_url, true);
+    
     document.getElementById('btn-clear-chat').classList.remove('hidden');
     chatBox.innerHTML = '<i style="color:#888;">Загрузка истории...</i>'; 
     document.getElementById('chat-input-area').classList.remove('hidden');
@@ -468,6 +571,7 @@ function openEditModal(persona) {
     document.getElementById('ai-modal-title').innerText = "Редактировать ИИ";
     document.getElementById('edit-ai-id').value = persona.id;
     document.getElementById('ai-name').value = persona.name;
+    document.getElementById('ai-avatar-url').value = persona.avatar_url || persona.logo_url || "";
     document.getElementById('ai-prompt').value = persona.system_prompt;
     document.getElementById('new-ai-modal').classList.remove('hidden');
 }
@@ -478,7 +582,6 @@ async function deletePersona(id) {
     if (currentPersona && currentPersona.id === id) startApp(); else await loadPersonas();
 }
 
-// API Запросы
 async function fetchFromApi(model, apiKey, contents, systemInstructionText) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const body = { contents: contents };
@@ -494,7 +597,6 @@ async function fetchFromApi(model, apiKey, contents, systemInstructionText) {
     return data.candidates[0].content.parts[0].text;
 }
 
-// Логика 1: ЧАТ (Обычные ключи)
 async function sendGeminiChatRequest(contents, systemInstructionText) {
     for (let model of GEMINI_MODELS) {
         for (let keyObj of userApiKeys) {
@@ -508,7 +610,6 @@ async function sendGeminiChatRequest(contents, systemInstructionText) {
     throw new Error("Все обычные API-ключи или лимиты моделей чата исчерпаны.");
 }
 
-// Логика 2: ПАМЯТЬ (Только Мастер-Ключ)
 async function makeMemoryNetworkCall(contents) {
     if (!masterApiKeyObj) throw new Error("Мастер-ключ не найден.");
     
@@ -548,7 +649,6 @@ async function compressMemory() {
     }
 }
 
-// Конвертируем файл в Base64 для отображения превью и отправки в Gemini
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -558,7 +658,6 @@ function fileToBase64(file) {
     });
 }
 
-// Отрисовка превью
 function renderPreviews() {
     const container = document.getElementById('attachment-preview');
     container.innerHTML = '';
@@ -579,7 +678,6 @@ function renderPreviews() {
     });
 }
 
-// Удаление картинки из превью (сделаем функцию глобальной для onclick)
 window.removeAttachment = function(index) {
     currentAttachments.splice(index, 1);
     renderPreviews();
