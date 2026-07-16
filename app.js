@@ -5,8 +5,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
-let userApiKeys = []; // Теперь храним объекты { id, key_value }
+let userApiKeys = []; 
 let currentPersona = null;
+let currentChatHistory = []; // Массив для хранения контекста диалога текущего ИИ
 
 // Перечень актуальных бесплатных моделей Gemini в порядке убывания возможностей (Downgrade)
 const GEMINI_MODELS = [
@@ -54,7 +55,7 @@ async function checkApiKeys() {
     const { data, error } = await supabaseClient.from('api_keys').select('id, key_value');
     
     if (data && data.length > 0) {
-        userApiKeys = data; // Сохраняем массив объектов
+        userApiKeys = data; 
         document.getElementById('api-key-modal').classList.add('hidden');
         startApp();
     } else {
@@ -148,6 +149,7 @@ async function startApp() {
     document.getElementById('chat-header').innerText = `Выберите ИИ для начала общения`;
     document.getElementById('chat-messages').innerHTML = '';
     currentPersona = null;
+    currentChatHistory = [];
     
     await loadPersonas();
 }
@@ -162,7 +164,6 @@ async function loadPersonas() {
             const li = document.createElement('li');
             li.className = 'ai-item';
             
-            // Клик по самому элементу открывает чат
             li.onclick = () => selectPersona(persona);
             
             li.innerHTML = `
@@ -173,13 +174,11 @@ async function loadPersonas() {
                 </div>
             `;
             
-            // Обработчик редактирования
             li.querySelector('.btn-edit').addEventListener('click', (e) => {
-                e.stopPropagation(); // Чтобы чат не открывался параллельно
+                e.stopPropagation(); 
                 openEditModal(persona);
             });
             
-            // Обработчик удаления
             li.querySelector('.btn-del').addEventListener('click', (e) => {
                 e.stopPropagation();
                 deletePersona(persona.id);
@@ -190,11 +189,44 @@ async function loadPersonas() {
     }
 }
 
-function selectPersona(persona) {
+// === ВЫБОР ИИ И ЗАГРУЗКА ИСТОРИИ ИЗ БД ===
+async function selectPersona(persona) {
     currentPersona = persona;
-    document.getElementById('chat-header').innerText = `Чат: ${persona.name}`;
-    document.getElementById('chat-messages').innerHTML = ''; 
+    const chatHeader = document.getElementById('chat-header');
+    const chatBox = document.getElementById('chat-messages');
+    
+    chatHeader.innerText = `Чат: ${persona.name}`;
+    chatBox.innerHTML = '<i style="color:#888;">Загрузка истории...</i>'; 
     document.getElementById('chat-input-area').classList.remove('hidden');
+
+    currentChatHistory = []; // Очищаем локальный контекст
+
+    // Загружаем сообщения именно этого ИИ
+    const { data, error } = await supabaseClient
+        .from('chat_messages')
+        .select('*')
+        .eq('persona_id', persona.id)
+        .order('created_at', { ascending: true });
+
+    chatBox.innerHTML = ''; 
+
+    if (error) {
+        console.error("Ошибка загрузки истории:", error);
+        return;
+    }
+
+    if (data && data.length > 0) {
+        data.forEach(msg => {
+            // Отрисовываем
+            chatBox.innerHTML += `<div class="msg ${msg.role}">${msg.message_text}</div>`;
+            // Запоминаем для Gemini
+            currentChatHistory.push({
+                role: msg.role,
+                parts: [{ text: msg.message_text }]
+            });
+        });
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
 }
 
 // === СОЗДАНИЕ И РЕДАКТИРОВАНИЕ ИИ ===
@@ -229,7 +261,6 @@ document.getElementById('btn-save-ai').addEventListener('click', async () => {
     }
     
     if (id) {
-        // Редактирование существующего ИИ
         const { error } = await supabaseClient.from('ai_personas').update({ name, system_prompt: prompt }).eq('id', id);
         if (error) alert(error.message);
         else {
@@ -240,7 +271,6 @@ document.getElementById('btn-save-ai').addEventListener('click', async () => {
             }
         }
     } else {
-        // Создание нового ИИ
         const { error } = await supabaseClient.from('ai_personas').insert([{
             user_id: currentUser.id,
             name: name,
@@ -255,21 +285,21 @@ document.getElementById('btn-save-ai').addEventListener('click', async () => {
 
 // Удаление ИИ
 async function deletePersona(id) {
-    if (!confirm("Вы уверены, что хотите удалить этого ИИ?")) return;
+    if (!confirm("Вы уверены, что хотите удалить этого ИИ? (Вся переписка с ним также будет удалена)")) return;
     
     const { error } = await supabaseClient.from('ai_personas').delete().eq('id', id);
     if (error) alert(error.message);
     else {
         if (currentPersona && currentPersona.id === id) {
-            startApp(); // Сбрасываем чат, если удалили активного ИИ
+            startApp(); 
         } else {
             await loadPersonas();
         }
     }
 }
 
-// === РОУТИНГ КЛЮЧЕЙ GEMINI ===
-async function sendGeminiRequest(promptText) {
+// === РОУТИНГ КЛЮЧЕЙ И ОТПРАВКА КОНТЕКСТА В GEMINI ===
+async function sendGeminiRequest() {
     for (let model of GEMINI_MODELS) {
         for (let keyObj of userApiKeys) {
             try {
@@ -281,7 +311,7 @@ async function sendGeminiRequest(promptText) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         system_instruction: { parts: [{ text: currentPersona.system_prompt }]},
-                        contents: [{ parts: [{ text: promptText }]}]
+                        contents: currentChatHistory // Передаем всю историю!
                     })
                 });
 
@@ -305,25 +335,55 @@ async function sendGeminiRequest(promptText) {
     throw new Error("Все ваши API ключи или лимиты моделей Gemini полностью исчерпаны.");
 }
 
-// === ОТПРАВКА СООБЩЕНИЙ ===
+// === ОТПРАВКА СООБЩЕНИЙ С СОХРАНЕНИЕМ В БД ===
 document.getElementById('btn-send').addEventListener('click', async () => {
     const input = document.getElementById('message-input');
     const text = input.value.trim();
     if (!text || !currentPersona) return;
 
     const chatBox = document.getElementById('chat-messages');
+    
+    // 1. Отрисовка сообщения юзера
     chatBox.innerHTML += `<div class="msg user">${text}</div>`;
     input.value = '';
     chatBox.scrollTop = chatBox.scrollHeight;
 
+    // 2. Добавление в локальный контекст
+    currentChatHistory.push({ role: 'user', parts: [{ text: text }] });
+
+    // 3. Сохранение сообщения юзера в БД
+    await supabaseClient.from('chat_messages').insert([{
+        user_id: currentUser.id,
+        persona_id: currentPersona.id,
+        role: 'user',
+        message_text: text
+    }]);
+
     try {
-        const reply = await sendGeminiRequest(text);
+        // 4. Отправка запроса с полным контекстом в Gemini
+        const reply = await sendGeminiRequest();
+        
+        // 5. Отрисовка ответа ИИ
         chatBox.innerHTML += `<div class="msg model">${reply}</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
+
+        // 6. Добавление ответа ИИ в локальный контекст
+        currentChatHistory.push({ role: 'model', parts: [{ text: reply }] });
+
+        // 7. Сохранение ответа ИИ в БД
+        await supabaseClient.from('chat_messages').insert([{
+            user_id: currentUser.id,
+            persona_id: currentPersona.id,
+            role: 'model',
+            message_text: reply
+        }]);
+
     } catch (error) {
         alert(error.message);
+        // Откат визуала и истории в случае ошибки API (нет интернета или лимиты)
         if (chatBox.lastElementChild) {
             chatBox.lastElementChild.remove(); 
         }
+        currentChatHistory.pop(); 
     }
 });
