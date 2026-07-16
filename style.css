@@ -153,3 +153,35 @@ button:hover { background: var(--primary-hover); }
 
 .msg.typing { background: var(--bubble-model); color: var(--text-muted); font-style: italic; align-self: flex-start; animation: pulse 1.5s infinite ease-in-out; }
 @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+/* Сетка выбора иконок для бота */
+.icon-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+.icon-option {
+    width: 45px;
+    height: 45px;
+    border-radius: 12px;
+    border: 2px solid var(--border-color);
+    background: var(--input-bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-muted);
+    font-size: 20px;
+}
+.icon-option:hover {
+    background: var(--bg-app);
+    color: var(--text-main);
+}
+.icon-option.active {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    background: var(--bg-app);
+    transform: scale(1.05);
+}

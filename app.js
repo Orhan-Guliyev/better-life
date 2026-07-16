@@ -102,6 +102,33 @@ function setThemeColor(color) {
     });
 }
 
+// === ОБНОВЛЕННАЯ ФУНКЦИЯ АВАТАРОК ===
+function getAvatarHtml(name, avatarData, isSmall = false) {
+    const sizeClass = isSmall ? 'style="width:35px; height:35px; font-size:16px;"' : '';
+    
+    // Если это иконка из FontAwesome (например "fa-dumbbell")
+    if (avatarData && avatarData.startsWith('fa-')) {
+        // Делаем кружок с акцентным цветом и белой иконкой внутри
+        return `<div class="avatar-fallback" style="background-color: var(--primary-color);" ${sizeClass}>
+                    <i class="fa-solid ${avatarData}"></i>
+                </div>`;
+    }
+    
+    // Если это старая прямая ссылка на картинку (поддержка старых ботов)
+    if (avatarData && avatarData.startsWith('http')) {
+        return `<img src="${avatarData}" class="avatar-img" ${sizeClass} alt="${name}">`;
+    }
+    
+    // Запасной вариант (буква), если вообще ничего нет
+    const firstLetter = name ? name.trim().charAt(0).toUpperCase() : '?';
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) { hash = name.charCodeAt(i) + ((hash << 5) - hash); }
+    const colors = ['#e57373', '#f06292', '#ba68c8', '#9575cd', '#7986cb', '#64b5f6', '#4fc3f7', '#4dd0e1', '#4db6ac', '#81c784'];
+    const bgColor = colors[Math.abs(hash) % colors.length];
+    
+    return `<div class="avatar-fallback" style="background-color: ${bgColor};" ${sizeClass}>${firstLetter}</div>`;
+}
+
 function adjustColorBrightness(hex, percent) {
     let num = parseInt(hex.replace("#",""), 16),
         amt = Math.round(2.55 * percent),
@@ -123,6 +150,19 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.color-dot').forEach(dot => {
         dot.addEventListener('click', (e) => {
             setThemeColor(e.target.getAttribute('data-color'));
+        });
+    });
+
+    // === НОВАЯ ЛОГИКА ВЫБОРА ИКОНКИ ===
+    document.querySelectorAll('.icon-option').forEach(option => {
+        option.addEventListener('click', (e) => {
+            // Убираем класс active у всех
+            document.querySelectorAll('.icon-option').forEach(el => el.classList.remove('active'));
+            // Добавляем нажатому элементу
+            const target = e.currentTarget;
+            target.classList.add('active');
+            // Сохраняем класс иконки в скрытое поле
+            document.getElementById('ai-selected-icon').value = target.getAttribute('data-icon');
         });
     });
 
@@ -259,12 +299,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('btn-new-ai').addEventListener('click', () => {
+document.getElementById('btn-new-ai').addEventListener('click', () => {
         document.getElementById('ai-modal-title').innerText = "Создать ИИ";
         document.getElementById('edit-ai-id').value = "";
         document.getElementById('ai-name').value = "";
-        document.getElementById('ai-avatar-url').value = "";
         document.getElementById('ai-prompt').value = "";
+        
+        // Сброс иконки по умолчанию
+        document.querySelectorAll('.icon-option').forEach(el => el.classList.remove('active'));
+        document.querySelector('.icon-option[data-icon="fa-robot"]').classList.add('active');
+        document.getElementById('ai-selected-icon').value = 'fa-robot';
+        
         document.getElementById('new-ai-modal').classList.remove('hidden');
     });
 
@@ -272,25 +317,47 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('new-ai-modal').classList.add('hidden');
     });
 
+// Функцию openEditModal нужно вынести в глобальную область или объявить перед вызовом
+    window.openEditModal = function(persona) {
+        document.getElementById('ai-modal-title').innerText = "Редактировать ИИ";
+        document.getElementById('edit-ai-id').value = persona.id;
+        document.getElementById('ai-name').value = persona.name;
+        document.getElementById('ai-prompt').value = persona.system_prompt;
+        
+        // Установка сохраненной иконки бота
+        const savedIcon = persona.avatar_url || persona.logo_url || 'fa-robot';
+        document.querySelectorAll('.icon-option').forEach(el => el.classList.remove('active'));
+        const iconEl = document.querySelector(`.icon-option[data-icon="${savedIcon}"]`);
+        if (iconEl) {
+            iconEl.classList.add('active');
+            document.getElementById('ai-selected-icon').value = savedIcon;
+        } else {
+            // Если иконка не найдена (например, старая ссылка), просто выбираем робота
+            document.querySelector('.icon-option[data-icon="fa-robot"]').classList.add('active');
+            document.getElementById('ai-selected-icon').value = 'fa-robot';
+        }
+
+        document.getElementById('new-ai-modal').classList.remove('hidden');
+    };
+
     document.getElementById('btn-save-ai').addEventListener('click', async () => {
         const id = document.getElementById('edit-ai-id').value;
         const name = document.getElementById('ai-name').value.trim();
-        const avatarUrl = document.getElementById('ai-avatar-url').value.trim();
         const prompt = document.getElementById('ai-prompt').value.trim();
+        const selectedIcon = document.getElementById('ai-selected-icon').value; // Получаем выбранную иконку
         
-        if (!name || !prompt) return alert("Заполните поля!");
+        if (!name || !prompt) return alert("Заполните поля имени и промпта!");
         
-        // Поддерживаем как "avatar_url", так и "logo_url" на случай любого дизайна вашей таблицы
         const payload = { 
             user_id: currentUser.id, 
             name, 
             system_prompt: prompt,
-            avatar_url: avatarUrl,
-            logo_url: avatarUrl
+            avatar_url: selectedIcon, // Сохраняем класс иконки (напр. "fa-dumbbell") в БД
+            logo_url: selectedIcon 
         };
         
         if (id) {
-            delete payload.user_id; // При обновлении ID юзера менять не нужно
+            delete payload.user_id; 
             await supabaseClient.from('ai_personas').update(payload).eq('id', id);
         } else {
             await supabaseClient.from('ai_personas').insert([payload]);

@@ -44,19 +44,19 @@
         </div>
     </div>
 
-    <div id="settings-modal" class="modal hidden">
+<div id="settings-modal" class="modal hidden">
         <div class="modal-content">
             <h2><i class="fa-solid fa-sliders"></i> Настройки приложения</h2>
             
             <div class="settings-section">
-                <h3><i class="fa-solid fa-palette"></i> Персонализация темы</h3>
+                <h3><i class="fa-solid fa-palette"></i> Цвет акцента</h3>
                 <div class="color-picker-container">
-                    <span class="color-dot" data-color="#2481cc" style="background: #2481cc;"></span>
-                    <span class="color-dot" data-color="#4caf50" style="background: #4caf50;"></span>
-                    <span class="color-dot" data-color="#9c27b0" style="background: #9c27b0;"></span>
-                    <span class="color-dot" data-color="#ff9800" style="background: #ff9800;"></span>
-                    <span class="color-dot" data-color="#e91e63" style="background: #e91e63;"></span>
-                    <span class="color-dot" data-color="#00bcd4" style="background: #00bcd4;"></span>
+                    <span class="color-dot" data-color="blue" style="background: #2481cc;"></span>
+                    <span class="color-dot" data-color="green" style="background: #4caf50;"></span>
+                    <span class="color-dot" data-color="purple" style="background: #9c27b0;"></span>
+                    <span class="color-dot" data-color="orange" style="background: #ff9800;"></span>
+                    <span class="color-dot" data-color="pink" style="background: #e91e63;"></span>
+                    <span class="color-dot" data-color="cyan" style="background: #00bcd4;"></span>
                 </div>
             </div>
 
@@ -68,7 +68,6 @@
                     <button id="btn-update-master" class="btn-warning">Обновить</button>
                 </div>
             </div>
-
             <div class="settings-section">
                 <h3>Обычные ключи (Чат)</h3>
                 <div id="settings-keys-list"></div>
@@ -87,7 +86,24 @@
             <h2 id="ai-modal-title">Создать ИИ</h2>
             <input type="hidden" id="edit-ai-id">
             <input type="text" id="ai-name" placeholder="Имя (например: Диетолог)">
-            <input type="text" id="ai-avatar-url" placeholder="Ссылка на логотип (аватар) бота">
+            
+            <div class="icon-selector">
+                <label style="font-size: 14px; color: var(--text-muted); margin-bottom: 5px; display: block;">Выберите иконку бота:</label>
+                <div id="ai-icon-grid" class="icon-grid">
+                    <span class="icon-option active" data-icon="fa-robot" title="Робот"><i class="fa-solid fa-robot"></i></span>
+                    <span class="icon-option" data-icon="fa-user-doctor" title="Врач"><i class="fa-solid fa-user-doctor"></i></span>
+                    <span class="icon-option" data-icon="fa-dumbbell" title="Тренер"><i class="fa-solid fa-dumbbell"></i></span>
+                    <span class="icon-option" data-icon="fa-graduation-cap" title="Учитель"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span class="icon-option" data-icon="fa-briefcase" title="Бизнес/Юрист"><i class="fa-solid fa-briefcase"></i></span>
+                    <span class="icon-option" data-icon="fa-heart" title="Психолог"><i class="fa-solid fa-heart"></i></span>
+                    <span class="icon-option" data-icon="fa-utensils" title="Диетолог/Повар"><i class="fa-solid fa-utensils"></i></span>
+                    <span class="icon-option" data-icon="fa-laptop-code" title="Программист"><i class="fa-solid fa-laptop-code"></i></span>
+                    <span class="icon-option" data-icon="fa-language" title="Переводчик"><i class="fa-solid fa-language"></i></span>
+                    <span class="icon-option" data-icon="fa-palette" title="Художник"><i class="fa-solid fa-palette"></i></span>
+                </div>
+                <input type="hidden" id="ai-selected-icon" value="fa-robot">
+            </div>
+
             <textarea id="ai-prompt" placeholder="Промпт: Ты опытный диетолог..." style="height: 100px;"></textarea>
             <button id="btn-save-ai">Сохранить</button>
             <button id="btn-close-ai" class="btn-close-modal">Отмена</button>
