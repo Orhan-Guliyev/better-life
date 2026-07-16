@@ -1,6 +1,6 @@
 // === КОНФИГУРАЦИЯ SUPABASE ===
 const SUPABASE_URL = 'https://lcxbcxagitcilklmniwe.supabase.co'; 
-const SUPABASE_ANON_KEY = 'sb_secret_OKHVhL5J3aYPeGtjzABiUw_FC8op5yF'; 
+const SUPABASE_ANON_KEY = 'sb_publishable_lhqj8KIXDVvXTvcTuHTMzw_G6JytrCL'; 
 
 // ПЕРЕИМЕНОВАЛИ ИЗ supabase В supabaseClient, чтобы не было конфликта имен
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
