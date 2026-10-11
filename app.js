@@ -36,28 +36,21 @@ function maskKey(key) {
     return `${clean.substring(0, 6)}...${clean.slice(-4)}`;
 }
 
-// Генерация аватаров (Ссылка или цветной круг с первой буквой)
-function getAvatarHtml(name, url, isSmall = false) {
-    const sizeClass = isSmall ? 'style="width:35px; height:35px; font-size:14px;"' : '';
-    if (url && url.trim() !== '') {
-        return `<img src="${url}" class="avatar-img" ${sizeClass} alt="${name}">`;
-    }
-    const firstLetter = name ? name.trim().charAt(0).toUpperCase() : '?';
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const colors = ['#e57373', '#f06292', '#ba68c8', '#9575cd', '#7986cb', '#64b5f6', '#4fc3f7', '#4dd0e1', '#4db6ac', '#81c784', '#a1887f'];
-    const colorIndex = Math.abs(hash) % colors.length;
-    const bgColor = colors[colorIndex];
-    
-    return `<div class="avatar-fallback" style="background-color: ${bgColor};" ${sizeClass}>${firstLetter}</div>`;
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[character]);
 }
 
 // === СИСТЕМА УПРАВЛЕНИЯ ТЕМОЙ ===
 function initTheme() {
     const savedMode = localStorage.getItem('theme-mode') || 'light';
-    const savedColor = localStorage.getItem('theme-color') || '#2481cc';
+    const storedColor = localStorage.getItem('theme-color');
+    const savedColor = /^#[0-9a-f]{6}$/i.test(storedColor || '') ? storedColor : '#7257f5';
     
     // Переключение темы (светлая / темная)
     if (savedMode === 'dark') {
@@ -71,6 +64,7 @@ function initTheme() {
     // Установка кастомного цвета
     document.documentElement.style.setProperty('--primary-color', savedColor);
     document.documentElement.style.setProperty('--primary-hover', adjustColorBrightness(savedColor, -15));
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', savedColor);
     
     // Выделение активного кружка в настройках
     document.querySelectorAll('.color-dot').forEach(dot => {
@@ -92,6 +86,7 @@ function setThemeColor(color) {
     localStorage.setItem('theme-color', color);
     document.documentElement.style.setProperty('--primary-color', color);
     document.documentElement.style.setProperty('--primary-hover', adjustColorBrightness(color, -15));
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', color);
     
     document.querySelectorAll('.color-dot').forEach(dot => {
         if (dot.getAttribute('data-color') === color) {
@@ -104,19 +99,21 @@ function setThemeColor(color) {
 
 // === ОБНОВЛЕННАЯ ФУНКЦИЯ АВАТАРОК ===
 function getAvatarHtml(name, avatarData, isSmall = false) {
+    name = String(name || '');
     const sizeClass = isSmall ? 'style="width:35px; height:35px; font-size:16px;"' : '';
     
     // Если это иконка из FontAwesome (например "fa-dumbbell")
     if (avatarData && avatarData.startsWith('fa-')) {
+        const iconClass = escapeHtml(avatarData);
         // Делаем кружок с акцентным цветом и белой иконкой внутри
         return `<div class="avatar-fallback" style="background-color: var(--primary-color);" ${sizeClass}>
-                    <i class="fa-solid ${avatarData}"></i>
+                    <i class="fa-solid ${iconClass}"></i>
                 </div>`;
     }
     
     // Если это старая прямая ссылка на картинку (поддержка старых ботов)
     if (avatarData && avatarData.startsWith('http')) {
-        return `<img src="${avatarData}" class="avatar-img" ${sizeClass} alt="${name}">`;
+        return `<img src="${escapeHtml(avatarData)}" class="avatar-img" ${sizeClass} alt="${escapeHtml(name)}">`;
     }
     
     // Запасной вариант (буква), если вообще ничего нет
@@ -129,7 +126,69 @@ function getAvatarHtml(name, avatarData, isSmall = false) {
     return `<div class="avatar-fallback" style="background-color: ${bgColor};" ${sizeClass}>${firstLetter}</div>`;
 }
 
+function createMessageBubble(role, text) {
+    const bubble = document.createElement('div');
+    bubble.className = `msg ${role === 'user' ? 'user' : 'model'}`;
+    bubble.textContent = text || '';
+    return bubble;
+}
+
+function createTypingIndicator(label) {
+    const indicator = document.createElement('div');
+    indicator.className = 'msg model typing';
+    indicator.setAttribute('role', 'status');
+
+    const statusText = document.createElement('span');
+    statusText.textContent = label;
+    const dots = document.createElement('span');
+    dots.className = 'typing-dots';
+    dots.setAttribute('aria-hidden', 'true');
+    dots.innerHTML = '<span></span><span></span><span></span>';
+
+    indicator.append(statusText, dots);
+    return indicator;
+}
+
+function appendStoredMessage(container, role, messageText) {
+    const bubble = createMessageBubble(role, '');
+    const parsed = new DOMParser().parseFromString(String(messageText || ''), 'text/html');
+    const allowedImageOrigin = new URL(SUPABASE_URL).origin;
+
+    function appendNodes(nodes) {
+        nodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                bubble.appendChild(document.createTextNode(node.textContent));
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName === 'IMG') {
+                    try {
+                        const imageUrl = new URL(node.getAttribute('src'), allowedImageOrigin);
+                        if (imageUrl.origin === allowedImageOrigin &&
+                            imageUrl.pathname.startsWith('/storage/v1/object/public/chat-images/')) {
+                            const image = document.createElement('img');
+                            image.src = imageUrl.href;
+                            image.alt = 'Изображение из сообщения';
+                            image.className = 'chat-img';
+                            bubble.appendChild(image);
+                        }
+                    } catch {
+                        return;
+                    }
+                } else if (node.tagName === 'BR') {
+                    bubble.appendChild(document.createTextNode('\n'));
+                } else if (node.tagName !== 'SCRIPT' && node.tagName !== 'STYLE') {
+                    appendNodes(Array.from(node.childNodes));
+                }
+            }
+        });
+    }
+
+    appendNodes(Array.from(parsed.body.childNodes));
+    container.appendChild(bubble);
+    return bubble;
+}
+
 function adjustColorBrightness(hex, percent) {
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) return '#5c42df';
     let num = parseInt(hex.replace("#",""), 16),
         amt = Math.round(2.55 * percent),
         R = (num >> 16) + amt,
@@ -149,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // События выбора цвета
     document.querySelectorAll('.color-dot').forEach(dot => {
         dot.addEventListener('click', (e) => {
-            setThemeColor(e.target.getAttribute('data-color'));
+            setThemeColor(e.currentTarget.getAttribute('data-color'));
         });
     });
 
@@ -172,20 +231,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('file-input').addEventListener('change', async (e) => {
-        const files = e.target.files;
-        for (let file of files) {
-            const base64 = await fileToBase64(file);
-            currentAttachments.push({ file, base64 });
+        const input = e.currentTarget;
+        try {
+            for (const file of Array.from(input.files || [])) {
+                if (!file.type.startsWith('image/')) {
+                    throw new Error("Можно прикреплять только изображения.");
+                }
+                const base64 = await fileToBase64(file);
+                currentAttachments.push({ file, base64 });
+            }
+            renderPreviews();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'проверьте формат изображения';
+            alert(`Не удалось загрузить изображение: ${message}`);
+            renderPreviews();
+        } finally {
+            input.value = '';
         }
-        renderPreviews();
-        e.target.value = ''; 
     });
 
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
         if (session) {
             currentUser = session.user;
             document.getElementById('auth-screen').classList.add('hidden');
-            await checkApiKeys();
+            try {
+                await checkApiKeys();
+            } catch (error) {
+                alert(error.message);
+            }
         } else {
             currentUser = null;
             document.getElementById('auth-screen').classList.remove('hidden');
@@ -209,7 +282,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('btn-logout').addEventListener('click', async () => {
-        await supabaseClient.auth.signOut();
+        const { error } = await supabaseClient.auth.signOut();
+        if (error) alert(`Не удалось выйти: ${error.message}`);
     });
 
     document.getElementById('btn-save-setup-keys').addEventListener('click', async () => {
@@ -239,7 +313,11 @@ document.addEventListener('DOMContentLoaded', () => {
             else {
                 document.getElementById('setup-regular-key').value = '';
                 document.getElementById('setup-master-key').value = '';
-                await checkApiKeys(); 
+                try {
+                    await checkApiKeys();
+                } catch (error) {
+                    alert(error.message);
+                }
             }
         }
     });
@@ -251,6 +329,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-close-settings').addEventListener('click', () => {
         document.getElementById('settings-modal').classList.add('hidden');
+    });
+
+    document.getElementById('btn-back-to-list').addEventListener('click', () => {
+        document.getElementById('app-screen').classList.remove('is-chat-open');
+    });
+
+    document.querySelectorAll('.modal').forEach(modal => {
+        modal.addEventListener('click', event => {
+            if (event.target === modal && modal.id !== 'api-key-modal') {
+                modal.classList.add('hidden');
+            }
+        });
+    });
+
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            document.querySelectorAll('.modal:not(.hidden)').forEach(modal => {
+                if (modal.id !== 'api-key-modal') modal.classList.add('hidden');
+            });
+        }
     });
 
     document.getElementById('btn-update-master').addEventListener('click', async () => {
@@ -317,7 +415,6 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
         document.getElementById('new-ai-modal').classList.add('hidden');
     });
 
-// Функцию openEditModal нужно вынести в глобальную область или объявить перед вызовом
     window.openEditModal = function(persona) {
         document.getElementById('ai-modal-title').innerText = "Редактировать ИИ";
         document.getElementById('edit-ai-id').value = persona.id;
@@ -327,7 +424,8 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
         // Установка сохраненной иконки бота
         const savedIcon = persona.logo_url || 'fa-robot';
         document.querySelectorAll('.icon-option').forEach(el => el.classList.remove('active'));
-        const iconEl = document.querySelector(`.icon-option[data-icon="${savedIcon}"]`);
+        const iconEl = Array.from(document.querySelectorAll('.icon-option'))
+            .find(el => el.getAttribute('data-icon') === savedIcon);
         if (iconEl) {
             iconEl.classList.add('active');
             document.getElementById('ai-selected-icon').value = savedIcon;
@@ -355,11 +453,16 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
             logo_url: selectedIcon 
         };
         
+        let saveError;
         if (id) {
-            delete payload.user_id; 
-            await supabaseClient.from('ai_personas').update(payload).eq('id', id);
+            delete payload.user_id;
+            ({ error: saveError } = await supabaseClient.from('ai_personas').update(payload).eq('id', id));
         } else {
-            await supabaseClient.from('ai_personas').insert([payload]);
+            ({ error: saveError } = await supabaseClient.from('ai_personas').insert([payload]));
+        }
+        if (saveError) {
+            alert(`Не удалось сохранить ИИ: ${saveError.message}`);
+            return;
         }
         document.getElementById('new-ai-modal').classList.add('hidden');
         await loadPersonas();
@@ -367,22 +470,31 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
 
     document.getElementById('btn-clear-chat').addEventListener('click', async () => {
         if (!currentPersona) return;
+        if (document.getElementById('btn-send').disabled) return;
         if (!confirm("Очистить историю сообщений? Контекст будет сохранен в долгосрочную память.")) return;
 
         const chatBox = document.getElementById('chat-messages');
-        chatBox.innerHTML += `<div class="msg model typing">Архивирую сообщения в память...</div>`;
+        const indicator = document.createElement('div');
+        indicator.className = 'msg model typing';
+        indicator.textContent = 'Архивирую сообщения в память...';
+        chatBox.appendChild(indicator);
         chatBox.scrollTop = chatBox.scrollHeight;
 
-        if (currentChatHistory.length > 0) await compressMemory();
+        try {
+            if (currentChatHistory.length > 0) await compressMemory();
 
-        const { error } = await supabaseClient.from('chat_messages').delete().eq('persona_id', currentPersona.id);
-
-        if (error) {
-            alert("Ошибка очистки: " + error.message);
-            chatBox.removeChild(chatBox.lastChild);
-        } else {
+            const { error } = await supabaseClient.from('chat_messages').delete().eq('persona_id', currentPersona.id);
+            if (error) throw error;
+            currentChatHistory = currentSummary ? [
+                { role: 'user', parts: [{ text: `[Важная системная память из прошлых бесед: ${currentSummary}]` }] },
+                { role: 'model', parts: [{ text: "[Внутренняя память успешно синхронизирована.]" }] }
+            ] : [];
             chatBox.innerHTML = '';
             alert("Экран очищен! Детали сохранены в памяти ИИ.");
+        } catch (error) {
+            alert(`Не удалось очистить чат: ${error.message}`);
+        } finally {
+            indicator.remove();
         }
     });
 
@@ -395,18 +507,28 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
 
         const chatBox = document.getElementById('chat-messages');
         const attachmentsToSend = [...currentAttachments]; 
+        const sendButton = document.getElementById('btn-send');
+        if (sendButton.disabled) return;
+        sendButton.disabled = true;
+        const historyLengthBeforeSend = currentChatHistory.length;
+        let userMessageElement = null;
+        let userMessageSaved = false;
         
         input.value = '';
         currentAttachments = [];
         renderPreviews();
 
-        let userMessageHtml = '';
+        userMessageElement = document.createElement('div');
+        userMessageElement.className = 'msg user';
         attachmentsToSend.forEach(att => {
-            userMessageHtml += `<img src="${att.base64}" class="chat-img">`; 
+            const image = document.createElement('img');
+            image.src = att.base64;
+            image.alt = 'Прикреплённое изображение';
+            image.className = 'chat-img';
+            userMessageElement.appendChild(image);
         });
-        if (text) userMessageHtml += `<div>${text}</div>`;
-        
-        chatBox.innerHTML += `<div class="msg user">${userMessageHtml}</div>`;
+        if (text) userMessageElement.appendChild(document.createTextNode(text));
+        chatBox.appendChild(userMessageElement);
         chatBox.scrollTop = chatBox.scrollHeight;
 
         let geminiParts = [];
@@ -425,18 +547,27 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
         currentChatHistory.push({ role: 'user', parts: geminiParts });
 
         let dbMessageHtml = '';
-        const uploadIndicator = document.createElement('div');
-        uploadIndicator.className = 'msg model typing';
-        uploadIndicator.innerText = 'Обработка и загрузка файлов...';
+        let uploadIndicator = createTypingIndicator(
+            attachmentsToSend.length ? 'Разбираю вложения' : 'Собираю мысли'
+        );
         chatBox.appendChild(uploadIndicator);
         chatBox.scrollTop = chatBox.scrollHeight;
+        let responseBubble = null;
+        let streamedReply = '';
+
+        function showTypingStatus(label) {
+            uploadIndicator.remove();
+            uploadIndicator = createTypingIndicator(label);
+            chatBox.appendChild(uploadIndicator);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
 
         try {
             for (let att of attachmentsToSend) {
                 const fileExt = att.file.name.split('.').pop();
                 const fileName = `${currentUser.id}_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
                 
-                const { data: uploadData, error: uploadError } = await supabaseClient.storage
+                const { error: uploadError } = await supabaseClient.storage
                     .from('chat-images')
                     .upload(fileName, att.file);
                     
@@ -447,36 +578,79 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
             }
             if (text) dbMessageHtml += text;
 
-            await supabaseClient.from('chat_messages').insert([{
+            const { error: userMessageError } = await supabaseClient.from('chat_messages').insert([{
                 user_id: currentUser.id, 
                 persona_id: currentPersona.id, 
                 role: 'user', 
                 message_text: dbMessageHtml || text 
             }]);
-
-            uploadIndicator.innerText = 'Печатает...';
+            if (userMessageError) throw userMessageError;
+            userMessageSaved = true;
 
             if (currentChatHistory.length >= 30) await compressMemory();
 
-            const reply = await sendGeminiChatRequest(currentChatHistory, currentPersona.system_prompt);
+            showTypingStatus(`${currentPersona.name} думает`);
+            const reply = await sendGeminiChatRequest(
+                currentChatHistory,
+                currentPersona.system_prompt,
+                chunk => {
+                    if (!responseBubble) {
+                        uploadIndicator.remove();
+                        responseBubble = createMessageBubble('model', '');
+                        responseBubble.classList.add('streaming');
+                        chatBox.appendChild(responseBubble);
+                    }
+                    streamedReply += chunk;
+                    responseBubble.textContent = streamedReply;
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                },
+                () => {
+                    streamedReply = '';
+                    if (responseBubble) responseBubble.remove();
+                    responseBubble = null;
+                    showTypingStatus('Подбираю лучший ответ');
+                }
+            );
             uploadIndicator.remove();
 
-            chatBox.innerHTML += `<div class="msg model">${reply}</div>`;
+            if (!responseBubble) {
+                responseBubble = createMessageBubble('model', reply);
+                chatBox.appendChild(responseBubble);
+            } else {
+                responseBubble.classList.remove('streaming');
+                responseBubble.textContent = reply;
+            }
             chatBox.scrollTop = chatBox.scrollHeight;
 
             currentChatHistory.push({ role: 'model', parts: [{ text: reply }] });
 
-            await supabaseClient.from('chat_messages').insert([{
+            const { error: replySaveError } = await supabaseClient.from('chat_messages').insert([{
                 user_id: currentUser.id, persona_id: currentPersona.id, role: 'model', message_text: reply
             }]);
+            if (replySaveError) throw replySaveError;
 
         } catch (error) {
             if (uploadIndicator) uploadIndicator.remove();
-            alert(error.message);
-            if (chatBox.lastElementChild && chatBox.lastElementChild.classList.contains('user')) {
-                chatBox.lastElementChild.remove();
+            alert(error.message || 'Не удалось отправить сообщение.');
+            if (userMessageSaved) {
+                if (responseBubble && !streamedReply) responseBubble.remove();
+                else if (responseBubble) responseBubble.classList.remove('streaming');
+                chatBox.appendChild(createMessageBubble('model', 'Не удалось получить или сохранить ответ. Ваше сообщение осталось в чате.'));
+            } else {
+                if (userMessageElement) userMessageElement.remove();
+                currentChatHistory.length = historyLengthBeforeSend;
+                input.value = text;
+                currentAttachments = attachmentsToSend;
+                renderPreviews();
             }
-            currentChatHistory.pop(); 
+        }
+        sendButton.disabled = false;
+    });
+
+    document.getElementById('message-input').addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            document.getElementById('btn-send').click();
         }
     });
 
@@ -485,6 +659,7 @@ document.getElementById('btn-new-ai').addEventListener('click', () => {
 // === СИСТЕМА КЛЮЧЕЙ С МАСКИРОВАНИЕМ ===
 async function checkApiKeys() {
     const { data, error } = await supabaseClient.from('api_keys').select('id, key_value');
+    if (error) throw new Error(`Не удалось загрузить API-ключи: ${error.message}`);
     
     userApiKeys = [];
     masterApiKeyObj = null;
@@ -523,16 +698,19 @@ function renderSettingsKeys() {
     userApiKeys.forEach(k => {
         const row = document.createElement('div');
         row.className = 'key-row';
-        // Маскируем отображение обычных ключей
-        row.innerHTML = `
-            <span class="key-text" title="Ключ скрыт в целях безопасности">${maskKey(k.key_value)}</span>
-            <button onclick="deleteApiKey('${k.id}')">Удалить</button>
-        `;
+        const keyText = document.createElement('span');
+        keyText.className = 'key-text';
+        keyText.title = 'Ключ скрыт в целях безопасности';
+        keyText.textContent = maskKey(k.key_value);
+        const deleteButton = document.createElement('button');
+        deleteButton.textContent = 'Удалить';
+        deleteButton.addEventListener('click', () => deleteApiKey(k.id));
+        row.append(keyText, deleteButton);
         container.appendChild(row);
     });
 }
 
-window.deleteApiKey = async function(id) {
+async function deleteApiKey(id) {
     if (userApiKeys.length <= 1) return alert("Нельзя удалить единственный обычный ключ!");
     const { error } = await supabaseClient.from('api_keys').delete().eq('id', id);
     if (error) alert(error.message);
@@ -540,16 +718,23 @@ window.deleteApiKey = async function(id) {
         userApiKeys = userApiKeys.filter(k => k.id !== id);
         renderSettingsKeys();
     }
-};
+}
 
 // === ЯДРО ПРИЛОЖЕНИЯ ===
 async function startApp() {
-    document.getElementById('app-screen').classList.remove('hidden');
+    const appScreen = document.getElementById('app-screen');
+    appScreen.classList.remove('hidden', 'is-chat-open');
     document.getElementById('chat-input-area').classList.add('hidden'); 
     document.getElementById('chat-header-text').innerText = `Выберите ИИ для начала общения`;
     document.getElementById('active-chat-avatar').innerHTML = '';
     document.getElementById('btn-clear-chat').classList.add('hidden');
-    document.getElementById('chat-messages').innerHTML = '';
+    document.getElementById('chat-messages').innerHTML = `
+        <div class="welcome-card">
+            <div class="welcome-mark"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+            <h2>Идеи становятся проще</h2>
+            <p>Выберите ИИ слева, чтобы начать разговор. Создайте собственных помощников под свои цели и интересы.</p>
+        </div>
+    `;
     currentPersona = null;
     currentChatHistory = [];
     currentSummary = "";
@@ -557,24 +742,31 @@ async function startApp() {
 }
 
 async function loadPersonas() {
-    const { data } = await supabaseClient.from('ai_personas').select('*').order('created_at', { ascending: true });
+    const { data, error } = await supabaseClient.from('ai_personas').select('*').order('created_at', { ascending: true });
+    if (error) {
+        alert(`Не удалось загрузить список ИИ: ${error.message}`);
+        return;
+    }
     const list = document.getElementById('ai-list');
     list.innerHTML = '';
     if (data) {
         data.forEach(persona => {
             const li = document.createElement('li');
             li.className = 'ai-item';
+            li.dataset.personaId = String(persona.id);
             if (currentPersona && currentPersona.id === persona.id) {
                 li.classList.add('active');
             }
-            li.onclick = () => selectPersona(persona);
+            li.onclick = () => {
+                if (!document.getElementById('btn-send').disabled) selectPersona(persona);
+            };
             
             // Получаем аватар 
             const avatarHtml = getAvatarHtml(persona.name, persona.logo_url);
             
             li.innerHTML = `
                 ${avatarHtml}
-                <span class="ai-name">${persona.name}</span>
+                <span class="ai-name">${escapeHtml(persona.name)}</span>
                 <div class="ai-actions">
                     <button class="btn-edit"><i class="fa-solid fa-pen"></i></button>
                     <button class="btn-del"><i class="fa-solid fa-trash"></i></button>
@@ -589,10 +781,11 @@ async function loadPersonas() {
 
 async function selectPersona(persona) {
     currentPersona = persona;
+    document.getElementById('app-screen').classList.add('is-chat-open');
     
-    // Подсвечиваем активного бота в боковом меню
-    document.querySelectorAll('.ai-item').forEach(el => el.classList.remove('active'));
-    await loadPersonas(); // Перегрузим список чтобы обновился класс .active и аватар
+    document.querySelectorAll('.ai-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.personaId === String(persona.id));
+    });
 
     const chatHeader = document.getElementById('chat-header-text');
     const chatBox = document.getElementById('chat-messages');
@@ -616,40 +809,44 @@ async function selectPersona(persona) {
         );
     }
 
-    const { data } = await supabaseClient
+    const { data, error } = await supabaseClient
         .from('chat_messages')
         .select('*')
         .eq('persona_id', persona.id)
         .order('created_at', { ascending: true });
 
+    if (!currentPersona || currentPersona.id !== persona.id) return;
     chatBox.innerHTML = ''; 
+
+    if (error) {
+        chatBox.appendChild(createMessageBubble('model', `Не удалось загрузить историю: ${error.message}`));
+        return;
+    }
 
     if (data && data.length > 0) {
         data.forEach(msg => {
-            chatBox.innerHTML += `<div class="msg ${msg.role}">${msg.message_text}</div>`;
+            appendStoredMessage(chatBox, msg.role, msg.message_text);
             currentChatHistory.push({ role: msg.role, parts: [{ text: msg.message_text }] });
         });
-        chatBox.scrollTop = chatBox.scrollHeight;
     }
-}
-
-function openEditModal(persona) {
-    document.getElementById('ai-modal-title').innerText = "Редактировать ИИ";
-    document.getElementById('edit-ai-id').value = persona.id;
-    document.getElementById('ai-name').value = persona.name;
-    document.getElementById('ai-avatar-url').value = persona.logo_url || "";
-    document.getElementById('ai-prompt').value = persona.system_prompt;
-    document.getElementById('new-ai-modal').classList.remove('hidden');
+    chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 async function deletePersona(id) {
     if (!confirm("Удалить ИИ?")) return;
-    await supabaseClient.from('ai_personas').delete().eq('id', id);
+    const { error } = await supabaseClient.from('ai_personas').delete().eq('id', id);
+    if (error) {
+        alert(`Не удалось удалить ИИ: ${error.message}`);
+        return;
+    }
     if (currentPersona && currentPersona.id === id) startApp(); else await loadPersonas();
 }
 
-async function fetchFromApi(model, apiKey, contents, systemInstructionText) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+async function fetchFromApi(model, apiKey, contents, systemInstructionText, onText) {
+    const streaming = typeof onText === 'function';
+    const method = streaming ? 'streamGenerateContent' : 'generateContent';
+    const query = streaming ? `?alt=sse&key=${encodeURIComponent(apiKey)}` : `?key=${encodeURIComponent(apiKey)}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:${method}${query}`;
     const body = { contents: contents };
     if (systemInstructionText) body.system_instruction = { parts: [{ text: systemInstructionText }] };
 
@@ -658,18 +855,74 @@ async function fetchFromApi(model, apiKey, contents, systemInstructionText) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || 'Ошибка API');
-    return data.candidates[0].content.parts[0].text;
+    if (!streaming) {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || 'Ошибка API');
+        const text = data.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('');
+        if (!text) throw new Error('Модель вернула пустой ответ.');
+        return text;
+    }
+
+    if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error?.message || 'Ошибка API');
+    }
+    if (!response.body) throw new Error('Потоковый ответ недоступен в этом браузере.');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+
+    function processEvent(eventText) {
+        const dataLines = eventText
+            .split('\n')
+            .filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).trim());
+        if (!dataLines.length) return;
+
+        const payload = dataLines.join('\n');
+        if (!payload || payload === '[DONE]') return;
+        const chunkData = JSON.parse(payload);
+        const chunkText = chunkData.candidates?.[0]?.content?.parts
+            ?.map(part => part.text || '')
+            .join('') || '';
+        if (chunkText) {
+            fullText += chunkText;
+            onText(chunkText);
+        }
+    }
+
+    try {
+        while (true) {
+            const { value, done } = await reader.read();
+            buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+            let boundary;
+            while ((boundary = buffer.match(/\r?\n\r?\n/)) !== null) {
+                processEvent(buffer.slice(0, boundary.index).replace(/\r/g, ''));
+                buffer = buffer.slice(boundary.index + boundary[0].length);
+            }
+
+            if (done) break;
+        }
+        if (buffer.trim()) processEvent(buffer.replace(/\r/g, ''));
+    } finally {
+        reader.releaseLock();
+    }
+
+    if (!fullText) throw new Error('Модель вернула пустой ответ.');
+    return fullText;
 }
 
-async function sendGeminiChatRequest(contents, systemInstructionText) {
+async function sendGeminiChatRequest(contents, systemInstructionText, onText, onRetry) {
     for (let model of GEMINI_MODELS) {
         for (let keyObj of userApiKeys) {
             try {
-                return await fetchFromApi(model, keyObj.key_value, contents, systemInstructionText);
+                return await fetchFromApi(model, keyObj.key_value, contents, systemInstructionText, onText);
             } catch (e) {
                 console.warn(`[Чат] Сбой на модели ${model} с одним из ключей`);
+                if (onRetry) onRetry();
             }
         }
     }
@@ -693,26 +946,34 @@ async function makeMemoryNetworkCall(contents) {
 
 async function compressMemory() {
     console.log("Запущена оптимизация памяти ИИ...");
-    const dialogSnapshot = currentChatHistory.map(m => `${m.role === 'user' ? 'Пользователь' : 'ИИ'}: ${m.parts[0].text}`).join('\n');
+    const dialogSnapshot = currentChatHistory
+        .map(message => {
+            const content = message.parts
+                .map(part => part.text || (part.inlineData ? '[изображение]' : ''))
+                .filter(Boolean)
+                .join(' ');
+            return `${message.role === 'user' ? 'Пользователь' : 'ИИ'}: ${content}`;
+        })
+        .join('\n');
 
     const compressionPrompt = `Извлеки все важные факты о пользователе и контекст. Сформируй обновленную базу знаний.
     Предыдущая память: ${currentSummary || 'Отсутствует'}
     Новые сообщения: ${dialogSnapshot}`;
 
-    try {
-        const compressedResult = await makeMemoryNetworkCall([{ role: 'user', parts: [{ text: compressionPrompt }] }]);
-        currentSummary = compressedResult;
+    const compressedResult = await makeMemoryNetworkCall([{ role: 'user', parts: [{ text: compressionPrompt }] }]);
+    const { error } = await supabaseClient
+        .from('ai_personas')
+        .update({ ai_memory: compressedResult })
+        .eq('id', currentPersona.id);
+    if (error) throw new Error(`Не удалось сохранить память: ${error.message}`);
 
-        await supabaseClient.from('ai_personas').update({ ai_memory: currentSummary }).eq('id', currentPersona.id);
-
-        currentChatHistory = [
-            { role: 'user', parts: [{ text: `[Важная системная память из прошлых бесед: ${currentSummary}]` }] },
-            { role: 'model', parts: [{ text: "[Контекст успешно оптимизирован.]" }] }
-        ];
-        console.log("Память обновлена.");
-    } catch (e) {
-        console.error("Не удалось оптимизировать память:", e);
-    }
+    currentSummary = compressedResult;
+    currentPersona.ai_memory = compressedResult;
+    currentChatHistory = [
+        { role: 'user', parts: [{ text: `[Важная системная память из прошлых бесед: ${currentSummary}]` }] },
+        { role: 'model', parts: [{ text: "[Контекст успешно оптимизирован.]" }] }
+    ];
+    console.log("Память обновлена.");
 }
 
 function fileToBase64(file) {
