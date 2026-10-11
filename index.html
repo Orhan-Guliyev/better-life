@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Better Life AI</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <div id="auth-screen" class="screen">
+        <div class="auth-box">
+            <div class="auth-logo">
+                <i class="fa-solid fa-paper-plane"></i>
+                <h1>Better Life</h1>
+            </div>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="password" placeholder="Пароль">
+            <div class="auth-buttons">
+                <button id="btn-login">Войти</button>
+                <button id="btn-register" class="btn-secondary">Регистрация</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="api-key-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2><i class="fa-solid fa-key"></i> Настройка ключей</h2>
+            <p>Для работы приложения требуются ключи Gemini из AI Studio. Они хранятся безопасно.</p>
+            
+            <div id="setup-regular-container" class="setup-field-group">
+                <label>Обычный API ключ (для чата):</label>
+                <input type="text" id="setup-regular-key" placeholder="AIzaSy...">
+            </div>
+
+            <div id="setup-master-container" class="setup-field-group">
+                <label>Мастер-ключ (для памяти ИИ):</label>
+                <input type="text" id="setup-master-key" placeholder="AIzaSy...">
+            </div>
+
+            <button id="btn-save-setup-keys">Сохранить и начать</button>
+        </div>
+    </div>
+
+<div id="settings-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2><i class="fa-solid fa-sliders"></i> Настройки приложения</h2>
+            
+            <div class="settings-section">
+                <h3><i class="fa-solid fa-palette"></i> Цвет акцента</h3>
+                <div class="color-picker-container">
+                    <span class="color-dot" data-color="blue" style="background: #2481cc;"></span>
+                    <span class="color-dot" data-color="green" style="background: #4caf50;"></span>
+                    <span class="color-dot" data-color="purple" style="background: #9c27b0;"></span>
+                    <span class="color-dot" data-color="orange" style="background: #ff9800;"></span>
+                    <span class="color-dot" data-color="pink" style="background: #e91e63;"></span>
+                    <span class="color-dot" data-color="cyan" style="background: #00bcd4;"></span>
+                </div>
+            </div>
+
+            <div class="settings-section master-key-sec">
+                <h3>Мастер-ключ (Суммаризация)</h3>
+                <small id="current-master-display" class="masked-key-view"></small>
+                <div class="inline-input-group">
+                    <input type="text" id="settings-master-key" placeholder="Заменить мастер-ключ...">
+                    <button id="btn-update-master" class="btn-warning">Обновить</button>
+                </div>
+            </div>
+            <div class="settings-section">
+                <h3>Обычные ключи (Чат)</h3>
+                <div id="settings-keys-list"></div>
+                <div class="inline-input-group">
+                    <input type="text" id="new-setting-key" placeholder="Новый обычный ключ...">
+                    <button id="btn-add-setting-key">Добавить</button>
+                </div>
+            </div>
+
+            <button id="btn-close-settings" class="btn-close-modal">Закрыть</button>
+        </div>
+    </div>
+
+    <div id="new-ai-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="ai-modal-title">Создать ИИ</h2>
+            <input type="hidden" id="edit-ai-id">
+            <input type="text" id="ai-name" placeholder="Имя (например: Диетолог)">
+            
+            <div class="icon-selector">
+                <label style="font-size: 14px; color: var(--text-muted); margin-bottom: 5px; display: block;">Выберите иконку бота:</label>
+                <div id="ai-icon-grid" class="icon-grid">
+                    <span class="icon-option active" data-icon="fa-robot" title="Робот"><i class="fa-solid fa-robot"></i></span>
+                    <span class="icon-option" data-icon="fa-user-doctor" title="Врач"><i class="fa-solid fa-user-doctor"></i></span>
+                    <span class="icon-option" data-icon="fa-dumbbell" title="Тренер"><i class="fa-solid fa-dumbbell"></i></span>
+                    <span class="icon-option" data-icon="fa-graduation-cap" title="Учитель"><i class="fa-solid fa-graduation-cap"></i></span>
+                    <span class="icon-option" data-icon="fa-briefcase" title="Бизнес/Юрист"><i class="fa-solid fa-briefcase"></i></span>
+                    <span class="icon-option" data-icon="fa-heart" title="Психолог"><i class="fa-solid fa-heart"></i></span>
+                    <span class="icon-option" data-icon="fa-utensils" title="Диетолог/Повар"><i class="fa-solid fa-utensils"></i></span>
+                    <span class="icon-option" data-icon="fa-laptop-code" title="Программист"><i class="fa-solid fa-laptop-code"></i></span>
+                    <span class="icon-option" data-icon="fa-language" title="Переводчик"><i class="fa-solid fa-language"></i></span>
+                    <span class="icon-option" data-icon="fa-palette" title="Художник"><i class="fa-solid fa-palette"></i></span>
+                </div>
+                <input type="hidden" id="ai-selected-icon" value="fa-robot">
+            </div>
+
+            <textarea id="ai-prompt" placeholder="Промпт: Ты опытный диетолог..." style="height: 100px;"></textarea>
+            <button id="btn-save-ai">Сохранить</button>
+            <button id="btn-close-ai" class="btn-close-modal">Отмена</button>
+        </div>
+    </div>
+
+    <div id="app-screen" class="screen hidden">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Мои ИИ</h2>
+                <div class="header-actions">
+                    <button id="btn-theme-toggle" title="Переключить тему"><i class="fa-solid fa-moon"></i></button>
+                    <button id="btn-settings" title="Настройки"><i class="fa-solid fa-gear"></i></button>
+                    <button id="btn-new-ai" title="Создать ИИ"><i class="fa-solid fa-plus"></i></button>
+                    <button id="btn-logout" title="Выйти"><i class="fa-solid fa-right-from-bracket"></i></button>
+                </div>
+            </div>
+            <ul id="ai-list"></ul>
+        </div>
+        
+        <div class="chat-area">
+            <div id="chat-header">
+                <div class="chat-header-info">
+                    <div id="active-chat-avatar"></div>
+                    <span id="chat-header-text">Выберите ИИ для начала общения</span>
+                </div>
+                <button id="btn-clear-chat" class="hidden"><i class="fa-solid fa-trash-can"></i> Очистить чат</button>
+            </div>
+            
+            <div id="chat-messages"></div>
+            <div id="attachment-preview" class="attachment-preview hidden"></div>
+            
+            <div class="chat-input-area hidden" id="chat-input-area">
+                <input type="file" id="file-input" multiple accept="image/*" style="display: none;">
+                <button id="btn-attach" title="Прикрепить фото"><i class="fa-solid fa-paperclip"></i></button>
+                
+                <input type="text" id="message-input" placeholder="Напишите сообщение...">
+                <button id="btn-send" title="Отправить"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
